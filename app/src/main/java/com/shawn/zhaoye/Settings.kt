@@ -42,6 +42,7 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 private const val GITHUB = "https://github.com/Shawn-SU-1"
+private const val REPO = "https://github.com/Shawn-SU-1/zhaoye"
 
 private data class Credit(val name: String, val detail: String, val url: String?)
 
@@ -59,7 +60,7 @@ private val CREDITS = listOf(
     Credit(
         "照夜 for Android · 夢島千尋（Shawn）",
         "引擎的 Android 移植：Vulkan 计算、片边与日期后背的 Vulkan 内核、可移植光栅化层。\nGPL-3.0-or-later。",
-        GITHUB,
+        REPO,
     ),
 )
 
@@ -115,6 +116,9 @@ fun SettingsScreen(vm: DarkroomViewModel = viewModel(), onBack: () -> Unit) {
         if (note.isNotEmpty()) {
             Text(note, color = Amber, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
         }
+        LinkRow("出问题了？去 GitHub 提 issue", "$REPO/issues/new/choose") {
+            open(context, "$REPO/issues/new/choose")
+        }
 
         Divider()
 
@@ -148,6 +152,7 @@ fun SettingsScreen(vm: DarkroomViewModel = viewModel(), onBack: () -> Unit) {
             context.packageManager.getPackageInfo(context.packageName, 0).versionName
         }.getOrNull() ?: "?"))
         KeyValue("作者", "夢島千尋 / Shawn")
+        LinkRow("项目仓库", REPO) { open(context, REPO) }
         LinkRow("GitHub 主页", GITHUB) { open(context, GITHUB) }
         Body("不是滤镜，是冲印：光穿过胶片、在显影液里长出密度、再被相纸记录下来。")
 

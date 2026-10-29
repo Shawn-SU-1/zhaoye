@@ -1,0 +1,27 @@
+name: 想要个功能
+description: 新的胶片、相纸、参数，或者别的
+title: "[feat] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: 想要什么
+      placeholder: 想加 Kodak Ektar 100
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: 为什么
+      description: 解决什么问题，或者哪张照片让你觉得缺这个。
+    validations:
+      required: true
+
+  - type: markdown
+    attributes:
+      value: |
+        如果是想加胶片或相纸：这套光谱模型需要实测的染料密度曲线，
+        不能靠调色仿出来。上游 [spektrafilm](https://github.com/andreavolpato/spektrafilm)
+        已有的 28 套是现成的；没有的，得先有人把片基数据测出来。

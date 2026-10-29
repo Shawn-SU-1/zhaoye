@@ -251,3 +251,18 @@ heap_device_local_bytes   12058796032     // 统一内存，没有独立显存
 真正的解法是**分块渲染**（overlapped tiling）：把整帧切成带边距的瓦片，每块跑完整条管线
 再拼回，halation/grain 这类卷积靠每块的 halo 保证衔接。这是引擎层的改动，还没做。
 - 渲染是同步 dispatch，一张 1600 px 的 live 预览在 Adreno 660 上约 3–5 秒。
+
+## 出问题了
+
+在 [Issues](https://github.com/Shawn-SU-1/zhaoye/issues/new/choose) 开一条。
+
+这个 App 的效果取决于 GPU 和驱动，同一版 APK 在不同机器上差别可能很大，所以
+**请附上诊断报告**：设置页 →「导出日志文件」，会生成一个 `zhaoye-YYYYMMDD-HHmmss.txt`，
+把那个文件本身拖进 issue 输入框即可（GitHub 附件支持直接拖拽）。
+
+报告里已经带了机型、系统版本、ABI、内存、引擎 capabilities、最近 800 条应用日志，
+以及本进程的 logcat——从引擎启动、选片、参数被拒到渲染耗时都在里面。
+它是一份自包含的纯文本，不需要 root，也不申请任何权限。
+
+> logcat 会记下打开过哪个文件，所以报告里可能带照片路径或文件名。
+> 提交前扫一眼，不愿意公开的就删掉那几行。
