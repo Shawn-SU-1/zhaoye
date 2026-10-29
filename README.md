@@ -1,7 +1,16 @@
 # 照夜 / ZHAOYE
 
+[![release](https://img.shields.io/github/v/release/Shawn-SU-1/zhaoye?label=release&color=9a6b16)](https://github.com/Shawn-SU-1/zhaoye/releases/latest)
+[![platform](https://img.shields.io/badge/platform-arm64--v8a%20%C2%B7%20Android%208.0%2B-444)](https://github.com/Shawn-SU-1/zhaoye#装上)
+[![engine](https://img.shields.io/badge/engine-Vulkan%20compute-444)](https://github.com/Shawn-SU-1/zhaoye#它借用了什么)
+[![license](https://img.shields.io/badge/license-GPL--3.0--or--later-444)](https://github.com/Shawn-SU-1/zhaoye/blob/main/LICENSE)
+
 安卓暗房：同一份 C++20 光谱冲印引擎，用 Vulkan compute 在手机上跑，
 不是对着效果重画一遍滤镜。
+
+**下载**：[照夜 0.1.0 · arm64-v8a APK](https://github.com/Shawn-SU-1/zhaoye/releases/latest)（29.9 MB）
+——Android 8.0 以上、支持 Vulkan 1.1 的 arm64 真机。装不上或出问题，先看[装上](#装上)
+和[出问题了](#出问题了)；打算修什么、不做什么，见 [ROADMAP.md](ROADMAP.md)。
 
 > **照夜**，取自唐玄宗的名马「照夜白」——一身白毛，黑夜里也照得见。
 > 韩幹为它画过像，那张《照夜白图》今天还在大都会博物馆。
@@ -113,11 +122,29 @@ x86 模拟器跑不了，真机需要 Vulkan 1.1 以上。
 
 ## 装上
 
-仓库里没有预编译的 APK（`*.apk` 在 `.gitignore` 里）。按上一节出包后：
+### 直接装
+
+到 [Releases](https://github.com/Shawn-SU-1/zhaoye/releases/latest) 取
+`Zhaoye-0.1.0-arm64-v8a.apk`（29.9 MB），在手机上打开安装。这是侧载，系统会问一次
+要不要允许安装未知来源应用。签名是 RSA-4096 的发布密钥，证书 SHA-256
+`c4b5c76576838005bf90de0a55331341d9b3132e0ace0077a581385f3b43ca65`；apk 自身的校验值：
+
+```bash
+sha256sum Zhaoye-0.1.0-arm64-v8a.apk
+# 380cdd40cc96d94cf5658a4c902ffafd1ee40066e4c6ce46df9ce20b16199549
+```
+
+以前在本地装过 debug 版的，**先卸载再装**：签名不同，覆盖安装会被系统拒绝。
+
+### 自己出包
+
+仓库里不存 APK（`*.apk` 在 `.gitignore` 里）。按上一节出包后：
 
 ```bash
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
+
+### 跑得动的前提
 
 只有 `arm64-v8a`，要 Android 8.0（API 26）以上且支持 Vulkan 1.1——模拟器跑不了，得真机。
 App 不申请存储权限：选图走系统 Photo Picker，RAW 用 `content://` 读进来。
@@ -224,6 +251,8 @@ Nikon 的 HE/HE* 压缩 NEF 不在 LibRaw 0.22.2 的能力内，会明确报错�
   **6400×4273（27 MP）**；片源原尺寸（A7R3 的 7968×5320，42 MP）会让 Vulkan 设备掉线，
   见下节。
 - **没有半格拼接、CLI/MCP**——上游这些功能依赖 Apple 服务，移植同样是拒绝而不是模拟。
+
+上面几条哪些在修、哪些不做，以及分块渲染的具体方案，都写在 [ROADMAP.md](ROADMAP.md)。
 
 ## 全尺寸导出能到多大
 
