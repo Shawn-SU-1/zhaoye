@@ -1,0 +1,32 @@
+#version 450
+
+// spk_overscan_add_mask.comp -- the Vulkan translation of kernel ③ in
+// src/shaders/overscan.metal: a rasterised imprint (coverage, canvas-aligned)
+// added to the negative as exposure.
+//
+// M = {x0, y0, mw, mh, cw, ch, e_r, e_g, e_b}, all floats; the canvas is read
+// and written, so its binding is not writeonly.
+layout(local_size_x = 256) in;
+
+layout(set = 0, binding = 0, std430) readonly buffer MaskBuf { float v[]; } mask_data;
+layout(set = 0, binding = 1, std430) readonly buffer MetaBuf { float v[]; } M;
+layout(set = 0, binding = 2, std430) readonly buffer CountBuf { uint v[]; } meta;
+layout(set = 0, binding = 3, std430) buffer CanvasBuf { float v[]; } canvas;
+
+uint spk_global_index() {
+    return gl_GlobalInvocationID.y * (gl_NumWorkGroups.x * gl_WorkGroupSize.x) + gl_GlobalInvocationID.x;
+}
+
+void main() {
+    const uint i = spk_global_index();
+    if (i >= meta.v[0]) return;
+    const uint mw = uint(M.v[2]);
+    const int x = int(M.v[0]) + int(i % mw), y = int(M.v[1]) + int(i / mw);
+    if (x < 0 || y < 0 || x >= int(M.v[4]) || y >= int(M.v[5])) return;
+    const float c = mask_data.v[i];
+    if (c <= 0.0) return;
+    const uint o = 3u * (uint(y) * uint(M.v[4]) + uint(x));
+    canvas.v[o] += c * M.v[6];
+    canvas.v[o + 1u] += c * M.v[7];
+    canvas.v[o + 2u] += c * M.v[8];
+}

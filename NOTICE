@@ -1,0 +1,54 @@
+照夜 / ZHAOYE
+Copyright (C) 2026 夢島千尋 (Shawn) <https://github.com/Shawn-SU-1>
+
+本程序是自由软件：你可以依据自由软件基金会发布的 GNU 通用公共许可证第 3 版
+（或你选择的任何更新版本）的条款重新分发和/或修改它。
+
+本程序分发时希望它有用，但不提供任何担保；连适销性或特定用途适用性的默示担保也没有。
+详见 GNU 通用公共许可证。完整文本见本目录的 LICENSE。
+
+────────────────────────────────────────────────────────────
+这个 App 站在两层上游工作之上，两层的署名都不能省。
+────────────────────────────────────────────────────────────
+
+1. spektrafilm — 胶片的光谱模型、28 套实测胶片配置、放大 LUT
+   Andrea Volpato <https://github.com/andreavolpato/spektrafilm>
+   许可：配置与 LUT 为 CC BY-SA 4.0
+   本项目对它：原样使用，未修改数据；仅按字节编码成 Android 可直接 mmap/读取的形式
+   （assets/engine/spektrafilm_constants.bin、profiles/*.json、print_luts.json）
+   完整许可文本见 LICENSE-SPEKTRAFILM.txt
+
+2. SpektraLab — 上述模型的 C++/Metal 原生移植，本源代码的直接上游
+   Hanze Qiu <https://github.com/JamesQiu2005/SpektraLab>
+   许可：GPL-3.0-or-later
+   本项目对它：以 engine/ 目录的裁剪副本形式使用，并做了 Android 移植改动。
+   改动逐条记录在 patches/0001-android-port.patch（基线提交 fd891c6）。
+   主要改动：Vulkan 后端对移动 GPU 放宽 FMA 探针；片边模块对 Apple 服务的分叉；
+   四个片边 kernel 的 GLSL 版本。
+
+3. 本项目自身 — Android 适配层、JNI、可移植光栅化层、UI
+   夢島千尋 (Shawn) <https://github.com/Shawn-SU-1>
+   许可：GPL-3.0-or-later
+   主要文件：app/src/main/cpp/{jni_bridge,spk_raster}.*、app/src/main/java/**、gradle 配置、
+   scripts/ 下的构建脚本
+
+────────────────────────────────────────────────────────────
+其它随附组件
+────────────────────────────────────────────────────────────
+
+- LibRaw 0.22.2 — RAW 解码（交叉编译后静态链入 libspektralab.so，未修改）
+  LGPL-2.1 或 CDDL-1.0 双许可  <https://www.libraw.org>
+- volk — Vulkan 元加载器，见 engine/third_party/volk（MIT）
+- stb — stb_truetype 等单头库，见 engine/third_party/stb（public domain / MIT）
+- DroidSans / DroidSans-Bold / DroidSansMono — 片边字符用的字体
+  Apache License 2.0，随 Android 发布 <https://android.googlesource.com/platform/frameworks/base/>
+  （在本仓库中位于 app/src/main/assets/engine/fonts/）
+- sRGB.icc — 标准 sRGB 色彩配置文件
+- AndroidX / Kotlin / Jetpack Compose — Apache License 2.0
+
+────────────────────────────────────────────────────────────
+商标
+────────────────────────────────────────────────────────────
+
+Kodak、Fujifilm、Ilford 等胶片与相纸名称是各自权利人的商标，本项目仅用它们指称被模拟的
+产品，与这些公司没有隶属或背书关系。“照夜 / ZHAOYE” 是本项目的名称。

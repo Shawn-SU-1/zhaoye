@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The darkroom wall behind the strip; the launcher draws it as the
+         adaptive icon's background layer. -->
+    <color name="icon_background">#12100E</color>
+</resources>

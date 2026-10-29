@@ -1,0 +1,18 @@
+# Normalise text to LF in the repository; the engine and the Kotlin sources
+# both build fine either way, but a mixed tree is noise in every diff.
+* text=auto eol=lf
+
+# Baked engine data and Android resources must stay byte-for-byte.
+*.bin binary
+*.spv binary
+*.png binary
+*.jpg binary
+*.ttf binary
+*.otf binary
+*.icc binary
+*.jar binary
+*.zip binary
+
+# Shell scripts must keep LF even on a Windows checkout: Git Bash and WSL both
+# refuse a script whose shebang line ends in CR.
+*.sh text eol=lf

@@ -1,0 +1,1049 @@
+diff --git a/engine/src/gpu/gpu.hpp b/engine/src/gpu/gpu.hpp
+index b996193..02cf42b 100644
+--- a/engine/src/gpu/gpu.hpp
++++ b/engine/src/gpu/gpu.hpp
+@@ -402,6 +402,13 @@ public:
+     // wider than this renders and then cannot be shown.
+     virtual uint32_t max_texture_dimension_2d() const = 0;
+ 
++    // What the device will hold in one allocation, and how much memory it has,
++    // so a caller can budget a frame before it discovers the wall as a lost
++    // device. Zero where the backend has no such number.
++    virtual size_t max_storage_buffer_range() const { return 0; }
++    virtual size_t heap_device_local_bytes() const { return 0; }
++    virtual size_t heap_host_visible_bytes() const { return 0; }
++
+     // --- RFC-020: what the engine holds, and giving it back ---------------
+ 
+     // The pool's holdings, and the persistent allocations made outside it.
+diff --git a/engine/src/gpu/vulkan_gpu.cpp b/engine/src/gpu/vulkan_gpu.cpp
+index 16e7ddb..9c0a237 100644
+--- a/engine/src/gpu/vulkan_gpu.cpp
++++ b/engine/src/gpu/vulkan_gpu.cpp
+@@ -48,6 +48,13 @@ namespace {
+ 
+ constexpr uint32_t kWorkgroup = 256;
+ 
++// Past this size an upload is memcpy'd straight into the buffer the kernels
++// read, when the driver has memory that is both host visible and device local.
++// The staged path needs a second allocation of the same size, and at 42 MP the
++// frame is 485 MiB: the peak was 970 MiB for the length of one copy, which is
++// what the Adreno 660 in this phone answered with VK_ERROR_DEVICE_LOST.
++constexpr size_t kDirectUploadBytes = 32u << 20;
++
+ std::string vk_error(const char* operation, VkResult result) {
+     return std::string(operation) + " failed (VkResult " + std::to_string(int(result)) + ")";
+ }
+@@ -88,6 +95,13 @@ constexpr KernelSpec kKernels[] = {
+     {"spk_geometry_resample_df", 4, kWorkgroup},
+     {"spk_lut3d_trilinear", 6, kWorkgroup},
+     {"spk_di_normalise", 5, kWorkgroup},
++    // Android port: the four kernels that were Metal-only. See
++    // src/shaders/vulkan/spk_overscan_*.comp for the translations and
++    // src/pipeline/overscan.cpp for the node bodies that dispatch them.
++    {"spk_overscan_canvas", 4, kWorkgroup},
++    {"spk_overscan_add_mask", 4, kWorkgroup},
++    {"spk_overscan_film_present", 4, kWorkgroup},
++    {"spk_overscan_light", 4, kWorkgroup},
+ };
+ 
+ const KernelSpec* find_kernel(const char* name) {
+@@ -206,6 +220,17 @@ public:
+             return false;
+         }
+         vkGetPhysicalDeviceMemoryProperties(physical_, &memory_properties_);
++        // The memory type a large upload lands in directly. A unified-memory
++        // part has one; a discrete card usually does not, and keeps staging.
++        for (uint32_t i = 0; i < memory_properties_.memoryTypeCount; ++i) {
++            const VkMemoryPropertyFlags flags = memory_properties_.memoryTypes[i].propertyFlags;
++            const VkMemoryPropertyFlags both = VkMemoryPropertyFlags(
++                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
++            if ((flags & both) != both) continue;
++            if (direct_memory_type_ != UINT32_MAX && (flags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))
++                continue;   // a coherent type wins outright
++            direct_memory_type_ = i;
++        }
+ 
+         const float priority = 1.0f;
+         VkDeviceQueueCreateInfo queue_create{};
+@@ -232,6 +257,17 @@ public:
+ 
+     std::string device_name() const override { return properties_.deviceName; }
+ 
++    // Android port: Adreno and Mali routinely fold `precise fma()` back into a
++    // multiply when the operands make the residual exactly zero, so the probe
++    // reports "unfused" on hardware that renders correctly. The double-float
++    // kernels already carry the Dekker path for that case (specialization
++    // constant 0), so the port accepts it and says so in `math_mode`. Upstream's
++    // refusal is still available: set SPEKTRALAB_STRICT_FMA=1.
++    static bool allow_unfused_fma_on_gpu() {
++        const char* strict = std::getenv("SPEKTRALAB_STRICT_FMA");
++        return !(strict && *strict == '1');
++    }
++
+     bool check_math_mode(std::string& detail) override {
+         constexpr size_t n = 64;
+         float input[2 * n];
+@@ -292,15 +328,20 @@ public:
+             detail = "Vulkan probe passed (precise product + fused fma; full shader parity pending)";
+             return true;
+         }
+-        if (zero && !exact && properties_.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU) {
++        if (zero && !exact &&
++            (properties_.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU || allow_unfused_fma_on_gpu())) {
+             // The double-float kernels then take an exact Dekker product
+             // instead of fma (specialization constant 0; see two_prod in
+             // spk_iir_df_acc.comp): without it the IIR blur's low word is lost
+             // and the recursion amplifies it -- 0.4 % on a 257-px constant row.
+             fused_fma_ = 0;
+-            detail = "Vulkan probe passed on a CPU device with unfused fma (double-float kernels use an "
+-                     "exact Dekker product; full shader parity pending)";
+-            probe_cpu_storage_range(detail);
++            detail = properties_.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU
++                         ? "Vulkan probe passed on a CPU device with unfused fma (double-float kernels "
++                           "use an exact Dekker product; full shader parity pending)"
++                         : "Vulkan probe passed with unfused fma on a GPU (the device folds precise fma "
++                           "back to a multiply; double-float kernels take the exact Dekker product). "
++                           "Set SPEKTRALAB_STRICT_FMA=1 to refuse this.";
++            if (properties_.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU) probe_cpu_storage_range(detail);
+             return true;
+         }
+         if (!exact && !zero) { detail = "Vulkan math probe produced no informative residuals"; return false; }
+@@ -607,6 +648,23 @@ public:
+     uint32_t max_texture_dimension_2d() const override {
+         return properties_.limits.maxImageDimension2D;
+     }
++    size_t max_storage_buffer_range() const override { return size_t(storage_range_limit_); }
++    size_t heap_device_local_bytes() const override {
++        size_t total = 0;
++        for (uint32_t i = 0; i < memory_properties_.memoryHeapCount; ++i) {
++            const VkMemoryHeap& heap = memory_properties_.memoryHeaps[i];
++            if (heap.flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) total += size_t(heap.size);
++        }
++        return total;
++    }
++    size_t heap_host_visible_bytes() const override {
++        size_t total = 0;
++        for (uint32_t i = 0; i < memory_properties_.memoryHeapCount; ++i) {
++            const VkMemoryHeap& heap = memory_properties_.memoryHeaps[i];
++            if (!(heap.flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)) total += size_t(heap.size);
++        }
++        return total;
++    }
+ 
+     PoolStats pool_stats() const override {
+         std::lock_guard<std::mutex> lock(buffers_mutex_);
+@@ -770,6 +828,14 @@ private:
+                           bool persistent, std::string& error) {
+         if (bytes % 4) { error = "Vulkan upload size must be 4-byte aligned"; return {}; }
+         const auto start = diagnostic_start();
++        if (bytes >= kDirectUploadBytes && direct_memory_type_ != UINT32_MAX) {
++            BufferRef direct = upload_direct(raw, narrow, bytes, error);
++            if (direct) { transfer_timing("upload-direct", bytes, start); return direct; }
++            // A driver that refuses the allocation here refuses the staged one
++            // as well, but the staged path is what every other upload uses and
++            // its error message names the failing call, so let it speak.
++            error.clear();
++        }
+         BufferRef out = allocate(bytes, persistent, error);
+         if (!out) return {};
+         std::lock_guard<std::mutex> lock(dispatch_mutex_);
+@@ -802,6 +868,71 @@ private:
+         return out;
+     }
+ 
++    // One allocation, one memcpy: the host writes the very bytes the kernel
++    // reads, with no staging buffer and no vkCmdCopyBuffer.
++    BufferRef upload_direct(const void* raw, const double* narrow, size_t bytes, std::string& error) {
++        auto owned = std::make_unique<Buffer>();
++        Buffer& b = *owned;
++        b.bytes = bytes;
++        b.persistent = true;
++        VkBufferCreateInfo create{};
++        create.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
++        create.size = VkDeviceSize(bytes);
++        create.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
++                       VK_BUFFER_USAGE_TRANSFER_DST_BIT;
++        create.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
++        VkResult result = vkCreateBuffer(device_, &create, nullptr, &b.handle);
++        if (result != VK_SUCCESS) { error = vk_error("vkCreateBuffer", result); return {}; }
++        VkMemoryRequirements requirements{};
++        vkGetBufferMemoryRequirements(device_, b.handle, &requirements);
++        if (!(requirements.memoryTypeBits & (1u << direct_memory_type_))) {
++            vkDestroyBuffer(device_, b.handle, nullptr);
++            error = "upload_direct: memory type refuses this buffer";
++            return {};
++        }
++        VkMemoryAllocateInfo allocate_info{};
++        allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
++        allocate_info.allocationSize = requirements.size;
++        allocate_info.memoryTypeIndex = direct_memory_type_;
++        result = vkAllocateMemory(device_, &allocate_info, nullptr, &b.memory);
++        if (result != VK_SUCCESS) {
++            vkDestroyBuffer(device_, b.handle, nullptr);
++            error = vk_error("vkAllocateMemory", result);
++            return {};
++        }
++        b.allocation_bytes = size_t(requirements.size);
++        b.memory_type = direct_memory_type_;
++        b.memory_flags = memory_properties_.memoryTypes[direct_memory_type_].propertyFlags;
++        result = vkBindBufferMemory(device_, b.handle, b.memory, 0);
++        if (result == VK_SUCCESS) result = vkMapMemory(device_, b.memory, 0, VK_WHOLE_SIZE, 0, &b.mapped);
++        if (result != VK_SUCCESS || !b.mapped) {
++            if (b.mapped) vkUnmapMemory(device_, b.memory);
++            vkFreeMemory(device_, b.memory, nullptr);
++            vkDestroyBuffer(device_, b.handle, nullptr);
++            error = vk_error("vkBindBufferMemory/vkMapMemory", result);
++            return {};
++        }
++        if (narrow) {
++            float* dst = static_cast<float*>(b.mapped);
++            for (size_t i = 0; i < bytes / sizeof(float); ++i) dst[i] = float(narrow[i]);
++        } else {
++            std::memcpy(b.mapped, raw, bytes);
++        }
++        if (!mapped_range(b, bytes, true, error)) {
++            vkUnmapMemory(device_, b.memory);
++            vkFreeMemory(device_, b.memory, nullptr);
++            vkDestroyBuffer(device_, b.handle, nullptr);
++            return {};
++        }
++        {
++            std::lock_guard<std::mutex> lock(buffers_mutex_);
++            buffers_.push_back(owned.get());
++            ++audit_.persistent_allocations;
++            update_high_water();
++        }
++        return BufferRef(this, owned.release());
++    }
++
+     BufferRef allocate(size_t bytes, bool persistent, std::string& error) {
+         if (bytes == 0 || bytes > std::numeric_limits<VkDeviceSize>::max()) {
+             error = "invalid Vulkan buffer size";
+@@ -1002,6 +1133,9 @@ private:
+     // -1 not yet probed, 1 fused fma, 0 unfused (accepted on a CPU device only).
+     int fused_fma_ = -1;
+     VkPhysicalDeviceMemoryProperties memory_properties_{};
++    // Index of a host-visible device-local memory type, or UINT32_MAX when the
++    // driver has none and every upload must be staged.
++    uint32_t direct_memory_type_ = UINT32_MAX;
+     VkDevice device_ = VK_NULL_HANDLE;
+     VkQueue queue_ = VK_NULL_HANDLE;
+     uint32_t queue_family_ = 0;
+diff --git a/engine/src/pipeline/engine.cpp b/engine/src/pipeline/engine.cpp
+index f7d7edc..d4a8c18 100644
+--- a/engine/src/pipeline/engine.cpp
++++ b/engine/src/pipeline/engine.cpp
+@@ -318,9 +318,12 @@ struct spk_engine {
+ #ifndef __APPLE__
+         // These upstream effects still require kernels or Apple services that
+         // have not been ported. Defaults stay usable; explicit requests fail.
++        // `overscan` and `date_imprint` are ported (Android: pipeline/overscan.cpp
++        // and the four spk_overscan_*.comp kernels), so they are no longer
++        // advertised as missing. The other three still are.
+         Json unported = Json::array();
+-        for (const char* feature : {"digital_intermediate", "scene_latitude_mapping",
+-                                    "contrast_mask", "overscan", "date_imprint"})
++        for (const char* feature :
++             {"digital_intermediate", "scene_latitude_mapping", "contrast_mask"})
+             unported.push(Json(std::string(feature)));
+         backend.set("unsupported_features", std::move(unported));
+ #endif
+@@ -347,6 +350,15 @@ struct spk_engine {
+         out.set("max_mp", Json(double(kMaxFramePixels) / 1e6));
+         out.set("max_pixels", Json(double(kMaxFramePixels)));
+         out.set("max_texture_dimension_2d", Json(double(gpu ? gpu->max_texture_dimension_2d() : 0)));
++        // What this device will hold, so a caller can budget a frame instead of
++        // finding the wall as a lost device: one allocation's ceiling and the
++        // heaps behind it.
++        out.set("max_storage_buffer_range",
++                Json(double(gpu ? gpu->max_storage_buffer_range() : 0)));
++        out.set("heap_device_local_bytes",
++                Json(double(gpu ? gpu->heap_device_local_bytes() : 0)));
++        out.set("heap_host_visible_bytes",
++                Json(double(gpu ? gpu->heap_host_visible_bytes() : 0)));
+         // The `live` row here is the **default**: capabilities is answered by
+         // the engine, before any session exists, and the live tier's size is
+         // settable per session (`io.preview_long_edge`). A caller that wants
+diff --git a/engine/src/pipeline/overscan.cpp b/engine/src/pipeline/overscan.cpp
+index dad43ae..de2c99d 100644
+--- a/engine/src/pipeline/overscan.cpp
++++ b/engine/src/pipeline/overscan.cpp
+@@ -18,10 +18,17 @@
+ //                 error, weave, scan rotation/offset, fog and leak realisation,
+ //                 and (on 120, which is not sprocket-locked) where the edge
+ //                 numbers land.
+-// Text is rasterised with CoreText/CoreGraphics.
++// Text is rasterised with CoreText/CoreGraphics on Apple platforms; the
++// Android port swaps in spk_raster.hpp -- stb_truetype outlines filled by a
++// portable scan converter, and a scalar Gaussian for Accelerate -- so this
++// file compiles and runs off Apple too.
++#if defined(__APPLE__)
+ #include <Accelerate/Accelerate.h>
+ #include <CoreGraphics/CoreGraphics.h>
+ #include <CoreText/CoreText.h>
++#else
++#include "spk_raster.hpp"
++#endif
+ 
+ #include <algorithm>
+ #include <cmath>
+@@ -856,6 +863,7 @@ void film_to_canvas_px(const OverscanLayout& L, double s, double t, double& x, d
+     y = v / L.px;
+ }
+ 
++#if defined(__APPLE__)
+ CFAttributedStringRef make_text(const Op& op, CTFontRef font, double gain) {
+     CFStringRef str = CFStringCreateWithCString(nullptr, op.text.c_str(), kCFStringEncodingUTF8);
+     CGFloat white[] = {CGFloat(std::clamp(gain, 0.0, 1.0)), 1.0};
+@@ -870,6 +878,7 @@ CFAttributedStringRef make_text(const Op& op, CTFontRef font, double gain) {
+     CFRelease(attrs); CFRelease(kern); CFRelease(col); CFRelease(gray); CFRelease(str);
+     return as;
+ }
++#endif
+ 
+ // Rasterise one group into a canvas-aligned coverage bitmap (its bounding box).
+ bool rasterise(const OverscanLayout& L, const Group& g, std::vector<float>& cov, int& x0, int& y0,
+@@ -905,6 +914,7 @@ bool rasterise(const OverscanLayout& L, const Group& g, std::vector<float>& cov,
+     w = x1 - x0; h = y1 - y0;
+     if (w <= 0 || h <= 0) return false;
+ 
++#if defined(__APPLE__)
+     std::vector<uint8_t> px(size_t(w) * size_t(h), 0);
+     CGColorSpaceRef gray = CGColorSpaceCreateDeviceGray();
+     CGContextRef ctx = CGBitmapContextCreate(px.data(), size_t(w), size_t(h), 8, size_t(w), gray,
+@@ -985,6 +995,70 @@ bool rasterise(const OverscanLayout& L, const Group& g, std::vector<float>& cov,
+                 != kvImageNoError)
+             return false;
+     }
++#else
++    // The Android port. spk_raster's canvas takes the same transform calls in
++    // the same order, so this mirrors the Apple branch line for line; what
++    // changes is who does the inside test (a scan converter rather than Skia)
++    // and who convolves (a scalar loop rather than vImage).
++    port::Canvas page(w, h);
++    if (!page.ok()) return false;
++    page.translate(0, h);
++    page.scale(1, -1);
++    page.translate(-x0, -y0);
++    page.scale(1.0 / L.px, 1.0 / L.px);
++    page.translate(L.cu, L.cv);
++    {
++        const double a = L.A[0], b = L.A[1], c = L.A[2], d = L.A[3], det = a * d - b * c;
++        const double m[6] = {d / det, -c / det, -b / det, a / det, 0, 0};
++        page.concat(m);
++    }
++    page.translate(-L.cs, -L.ct);
++
++    for (const Op& op : g.ops) {
++        page.set_gray(std::clamp(op.gain, 0.0, 1.0));
++        page.begin_path();
++        if (op.kind == Op::Poly) {
++            page.move_to(op.pts[0], op.pts[1]);
++            for (size_t k = 2; k + 1 < op.pts.size(); k += 2) page.line_to(op.pts[k], op.pts[k + 1]);
++            page.close_path();
++            page.fill_path();
++            continue;
++        }
++        if (op.kind == Op::Circle) {
++            const double r = op.size_mm;
++            page.add_ellipse(op.pts[0], op.pts[1], r, r);
++            page.fill_path();
++            continue;
++        }
++        page.save();
++        page.translate(op.s, op.t);
++        page.rotate(op.rot_deg * M_PI / 180.0);
++        if (op.scale_advances) page.scale(op.hscale, 1.0);
++        // hscale widens the shapes only. CoreText wants y = -1 because its
++        // glyph space is y-up under a y-down CTM, and spk_raster's Canvas now
++        // stores rows the way CG does (row 0 = top, h - 1 - y), so the sign
++        // is the same on both ports: one convention, one number.
++        page.set_text_matrix(op.scale_advances ? 1.0 : op.hscale, -1.0);
++        page.show_text(op.font, op.size_mm, op.text, op.tracking_mm);
++        page.restore();
++    }
++
++    const std::vector<uint8_t>& px = page.pixels();
++    cov.resize(px.size());
++    for (size_t i = 0; i < px.size(); ++i) cov[i] = float(px[i]) * (1.0f / 255.0f);
++    // The same Gaussian, scalar and in place.
++    const double sigma = g.blur_mm / L.px;
++    if (sigma > 0.3) {
++        const int r = int(std::ceil(3.0 * sigma));
++        std::vector<float> k(size_t(2 * r + 1));
++        double sum = 0.0;
++        for (int i = -r; i <= r; ++i) { k[size_t(i + r)] = float(std::exp(-0.5 * i * i / (sigma * sigma))); sum += k[size_t(i + r)]; }
++        for (float& v : k) v = float(v / sum);
++        const int taps = 2 * r + 1;
++        if (!port::gaussian_planar(cov, w, h, k.data(), taps, true)) return false;
++        if (!port::gaussian_planar(cov, w, h, k.data(), taps, false)) return false;
++    }
++#endif
+     return true;
+ }
+ 
+@@ -1371,6 +1445,7 @@ double dot_text(const std::string& text, const DotFace& f, double ps, double pt,
+     return std::max(0.0, x - (f.advance - f.ncol + 1) * ps + d);
+ }
+ 
++#if defined(__APPLE__)
+ // A Helvetica-family string's advance in film mm, as CoreText lays it out.
+ double text_width(const char* font, double size_mm, const std::string& text, double tracking_mm, double hscale) {
+     Op op;
+@@ -1384,6 +1459,13 @@ double text_width(const char* font, double size_mm, const std::string& text, dou
+     CFRelease(line); CFRelease(as); CFRelease(f);
+     return w * hscale;
+ }
++#else
++// The port's stand-in: the bundled face's own advances, em-relative, with
++// CoreText's rule that the kern attribute adds to the advance.
++double text_width(const char* font, double size_mm, const std::string& text, double tracking_mm, double hscale) {
++    return port::text_advance(font, size_mm, text, tracking_mm) * hscale;
++}
++#endif
+ 
+ // The film edge -- the stock's own (`edge_look_for`), measured on the owner's
+ // strips in reference_film/ (2026-10-03). Until then every stock carried
+diff --git a/engine/src/pipeline/windows_unported.cpp b/engine/src/pipeline/windows_unported.cpp
+index 88e2dc6..bff3a1e 100644
+--- a/engine/src/pipeline/windows_unported.cpp
++++ b/engine/src/pipeline/windows_unported.cpp
+@@ -6,42 +6,13 @@
+ 
+ namespace spk {
+ 
+-bool Pipeline::overscan_wanted() const { return params_.film_render.overscan.active; }
+-
+-double Pipeline::overscan_gate_long_mm() const { return params_.camera.film_format_mm; }
+-
+-void Pipeline::overscan_frame(uint32_t& frame_w, uint32_t& frame_h) const {
+-    frame_w = frame_h = 0;
+-}
+-
+-bool Pipeline::set_overscan_frame(uint32_t, uint32_t, std::string& error) {
+-    if (!overscan_wanted()) return true;
+-    error = windows_unported_error(false, false, false, true, false);
+-    return false;
+-}
+-
+-// Main added spk_overscan_geometry after the Windows port's root (61bfc49);
+-// the clean textual merge left this undefined and the non-Apple engine did
+-// not link. Overscan is refused here, so there is never a layout to report.
+-std::string Pipeline::overscan_geometry_json() const { return "{\"valid\":false}"; }
+-
+-bool Pipeline::node_overscan(const Image& in, Image& out, std::string& error) {
+-    if (params_.film_render.overscan.active || params_.film_render.date_imprint.active) {
+-        error = windows_unported_error(false, false, false, params_.film_render.overscan.active,
+-                                        params_.film_render.date_imprint.active);
+-        return false;
+-    }
+-    out = in;
+-    return true;
+-}
+-
+-bool Pipeline::node_overscan_film_present(const Image& in, Image& out, std::string& error) {
+-    return node_overscan(in, out, error);
+-}
+-
+-bool Pipeline::node_overscan_light(const Image& in, Image& out, std::string& error) {
+-    return node_overscan(in, out, error);
+-}
++// Android port: the overscan / date-imprint stubs that used to live here are
++// gone -- pipeline/overscan.cpp is compiled into this backend now, and it
++// supplies overscan_wanted(), overscan_gate_long_mm(), overscan_frame(),
++// set_overscan_frame(), overscan_geometry_json() and the three node bodies.
++// Its CoreGraphics/CoreText/Accelerate calls are branched to spk_raster.hpp
++// and its four Metal kernels to src/shaders/vulkan/spk_overscan_*.comp.
++// What remains below is contrast_mask, which is still unported.
+ 
+ bool Pipeline::contrast_mask_wanted() const { return params_.print_render.contrast_mask.active; }
+ 
+diff --git a/engine/src/pipeline/windows_unported.hpp b/engine/src/pipeline/windows_unported.hpp
+index 02d340f..6d5e6ac 100644
+--- a/engine/src/pipeline/windows_unported.hpp
++++ b/engine/src/pipeline/windows_unported.hpp
+@@ -16,19 +16,21 @@ inline const char* windows_unported_error(bool di, bool latitude, bool mask,
+ }
+ 
+ inline const char* windows_unported_error(const Params& p) {
++    // `overscan` and `date_imprint` are ported (Android: pipeline/overscan.cpp
++    // plus the four spk_overscan_*.comp kernels), so they are passed as false
++    // rather than read off `p`. The remaining three still have no kernels.
+     return windows_unported_error(p.io.digital_intermediate, p.camera.scene_latitude.active,
+-                                  p.print_render.contrast_mask.active,
+-                                  p.film_render.overscan.active, p.film_render.date_imprint.active);
++                                  p.print_render.contrast_mask.active, false, false);
+ }
+ 
+ // Validate an already schema-checked delta before it mutates the session.
+ // A valid Windows session cannot already have any of these flags enabled.
+ inline const char* windows_unported_delta_error(const Json& delta) {
++    // See above: overscan and date imprint are ported, so a delta that turns
++    // them on is no longer refused here.
+     return windows_unported_error(delta.at("digital_intermediate").as_bool(),
+                                   delta.at("scene_latitude_active").as_bool(),
+-                                  delta.at("contrast_mask_active").as_bool(),
+-                                  delta.at("overscan_active").as_bool(),
+-                                  delta.at("date_imprint_active").as_bool());
++                                  delta.at("contrast_mask_active").as_bool(), false, false);
+ }
+ 
+ }  // namespace spk
+diff --git a/engine/src/shaders/vulkan/spk_overscan_add_mask.comp b/engine/src/shaders/vulkan/spk_overscan_add_mask.comp
+new file mode 100644
+index 0000000..58db4de
+--- /dev/null
++++ b/engine/src/shaders/vulkan/spk_overscan_add_mask.comp
+@@ -0,0 +1,32 @@
++#version 450
++
++// spk_overscan_add_mask.comp -- the Vulkan translation of kernel ③ in
++// src/shaders/overscan.metal: a rasterised imprint (coverage, canvas-aligned)
++// added to the negative as exposure.
++//
++// M = {x0, y0, mw, mh, cw, ch, e_r, e_g, e_b}, all floats; the canvas is read
++// and written, so its binding is not writeonly.
++layout(local_size_x = 256) in;
++
++layout(set = 0, binding = 0, std430) readonly buffer MaskBuf { float v[]; } mask_data;
++layout(set = 0, binding = 1, std430) readonly buffer MetaBuf { float v[]; } M;
++layout(set = 0, binding = 2, std430) readonly buffer CountBuf { uint v[]; } meta;
++layout(set = 0, binding = 3, std430) buffer CanvasBuf { float v[]; } canvas;
++
++uint spk_global_index() {
++    return gl_GlobalInvocationID.y * (gl_NumWorkGroups.x * gl_WorkGroupSize.x) + gl_GlobalInvocationID.x;
++}
++
++void main() {
++    const uint i = spk_global_index();
++    if (i >= meta.v[0]) return;
++    const uint mw = uint(M.v[2]);
++    const int x = int(M.v[0]) + int(i % mw), y = int(M.v[1]) + int(i / mw);
++    if (x < 0 || y < 0 || x >= int(M.v[4]) || y >= int(M.v[5])) return;
++    const float c = mask_data.v[i];
++    if (c <= 0.0) return;
++    const uint o = 3u * (uint(y) * uint(M.v[4]) + uint(x));
++    canvas.v[o] += c * M.v[6];
++    canvas.v[o + 1u] += c * M.v[7];
++    canvas.v[o + 2u] += c * M.v[8];
++}
+diff --git a/engine/src/shaders/vulkan/spk_overscan_canvas.comp b/engine/src/shaders/vulkan/spk_overscan_canvas.comp
+new file mode 100644
+index 0000000..2cf9403
+--- /dev/null
++++ b/engine/src/shaders/vulkan/spk_overscan_canvas.comp
+@@ -0,0 +1,215 @@
++#version 450
++
++// spk_overscan_canvas.comp -- the Vulkan translation of kernel ① (+② and the
++// fog of ③) in src/shaders/overscan.metal: raw exposure on the film canvas.
++//
++// One parameter block `P` of 261 floats, indexed exactly as `enum OsP` in
++// overscan.cpp -- that enum is the single source of the indices and this file
++// mirrors it. Geometry is in film millimetres: `s` along the film, `t` across
++// it, `t = 0` at the film's first long edge. A canvas pixel maps to film
++// coordinates through the scan registration (a rotation and an offset), so the
++// gate, the perforations and the edge print can sit a hair off square, as they
++// do in a real scan.
++//
++// The Metal version is the reference; this is a line-for-line translation, so
++// the two should be diffed rather than reasoned about separately.
++layout(local_size_x = 256) in;
++
++layout(set = 0, binding = 0, std430) readonly buffer FrameBuf { float v[]; } frame_data;
++layout(set = 0, binding = 1, std430) readonly buffer ParamBuf { float v[]; } P;
++layout(set = 0, binding = 2, std430) readonly buffer MetaBuf { uint v[]; } meta;
++layout(set = 0, binding = 3, std430) writeonly buffer OutBuf { float v[]; } out_data;
++
++// vulkan_gpu.cpp folds a dispatch past maxComputeWorkGroupCount[0] into rows of
++// workgroups; this is the 1D index it means.
++uint spk_global_index() {
++    return gl_GlobalInvocationID.y * (gl_NumWorkGroups.x * gl_WorkGroupSize.x) + gl_GlobalInvocationID.x;
++}
++
++const float kPi = 3.14159265358979323846;
++
++// enum OsP -- mirror of src/pipeline/overscan.cpp.
++const uint P_CW = 0u, P_CH = 1u, P_PX = 2u, P_FW = 3u, P_FH = 4u;
++const uint P_A00 = 5u, P_A01 = 6u, P_A10 = 7u, P_A11 = 8u, P_CS = 9u, P_CT = 10u, P_CU = 11u, P_CV = 12u;
++const uint P_VERTICAL = 13u;
++const uint P_GS0 = 14u, P_GT0 = 15u, P_GW = 16u, P_GH = 17u, P_CORNER = 18u, P_PENUMBRA = 19u;
++const uint P_WOB_A = 20u;   // 4 sides x 3 harmonics
++const uint P_WOB_PH = 32u;
++const uint P_FILM_W = 44u, P_FOG_AMP = 45u, P_FOG_WIDTH = 46u, P_FOG_SEED = 47u, P_FOG_PERIOD = 48u;
++const uint P_FOG_R = 49u, P_FOG_G = 50u, P_FOG_B = 51u;
++const uint P_N_LEAKS = 52u;
++const uint P_PERFORATED = 83u, P_PERF_PITCH = 84u, P_PERF_W = 85u, P_PERF_H = 86u, P_PERF_EDGE = 87u,
++           P_PERF_R = 88u, P_PERF_PHASE = 89u;
++const uint P_HOLE_C = 90u, P_HOLE_M = 91u, P_HOLE_Y = 92u;
++const uint P_FLARE_AMP = 93u, P_FLARE_WIDTH = 94u;
++const uint P_GATE_R = 95u;  // 4 corner radii: (s-,t-), (s+,t-), (s+,t+), (s-,t+)
++const uint P_N_Q = 99u, P_Q = 100u;
++const uint P_ROUGH_AMP = 180u, P_ROUGH_PERIOD = 181u, P_ROUGH_SEED = 182u;
++const uint P_HOLES_LIGHT = 183u, P_LIGHT_R = 184u, P_LIGHT_G = 185u, P_LIGHT_B = 186u;
++const uint P_PERF_SEED = 187u, P_LIGHT_FALL = 188u, P_LIGHT_DIR = 189u;
++const uint P_WALL_T = 190u, P_WALL_VS = 191u, P_WALL_VT = 192u, P_WALL_PAR = 193u,
++           P_BASE_R = 194u, P_BASE_G = 195u, P_BASE_B = 196u, P_WALL_GLOW = 197u, P_WALL_SCATTER = 198u;
++const uint P_CARRIER = 199u;
++const uint P_LEAKS = 200u;
++const uint P_PAIR_ADV = 260u;
++const uint kQStride = 10u;
++
++float p(uint i) { return P.v[i]; }
++
++vec2 canvas_to_film(float x, float y) {
++    const float u = (x + 0.5) * p(P_PX) - p(P_CU);
++    const float v = (y + 0.5) * p(P_PX) - p(P_CV);
++    return vec2(p(P_A00) * u + p(P_A01) * v + p(P_CS), p(P_A10) * u + p(P_A11) * v + p(P_CT));
++}
++
++uint hash_u(uint x) {
++    x ^= x >> 16; x *= 0x7feb352du; x ^= x >> 15; x *= 0x846ca68bu; x ^= x >> 16;
++    return x;
++}
++float hash_f(int i, uint seed) { return float(hash_u(uint(i) * 0x9E3779B9u ^ seed)) * (1.0 / 4294967295.0); }
++float value_noise(float x, uint seed) {
++    const float i0 = floor(x), f = x - i0;
++    const float w = f * f * (3.0 - 2.0 * f);
++    return mix(hash_f(int(i0), seed), hash_f(int(i0) + 1, seed), w);
++}
++
++// Signed distance to a convex quad (either winding; a repeated vertex makes a
++// triangle), negative inside.
++float sd_quad(vec2 pt, uint base) {
++    vec2 v[4] = {vec2(p(base + 0u), p(base + 1u)), vec2(p(base + 2u), p(base + 3u)),
++                 vec2(p(base + 4u), p(base + 5u)), vec2(p(base + 6u), p(base + 7u))};
++    float d = dot(pt - v[0], pt - v[0]);
++    float sgn = 1.0;
++    for (uint i = 0u, j = 3u; i < 4u; j = i, ++i) {
++        const vec2 e = v[j] - v[i], w = pt - v[i];
++        const float ee = dot(e, e);
++        if (ee < 1e-12) continue;
++        const vec2 b = w - e * clamp(dot(w, e) / ee, 0.0, 1.0);
++        d = min(d, dot(b, b));
++        const bool c0 = pt.y >= v[i].y, c1 = pt.y < v[j].y, c2 = e.x * w.y > e.y * w.x;
++        if ((c0 && c1 && c2) || (!c0 && !c1 && !c2)) sgn = -sgn;
++    }
++    return sgn * sqrt(d);
++}
++
++// The gate (RFC-032 §29): per-corner radii, convex quads added to or cut from
++// the opening, a machined edge's roughness, and each side's low-frequency
++// wobble. Signed distance, negative inside, in mm.
++float gate_sdf(vec2 st) {
++    const float hw = 0.5 * p(P_GW), hh = 0.5 * p(P_GH);
++    const float ds = st.x - (p(P_GS0) + hw), dt = st.y - (p(P_GT0) + hh);
++    const float r = ds > 0.0 ? (dt > 0.0 ? p(P_GATE_R + 2u) : p(P_GATE_R + 1u))
++                             : (dt > 0.0 ? p(P_GATE_R + 3u) : p(P_GATE_R + 0u));
++    const float qs = abs(ds) - (hw - r), qt = abs(dt) - (hh - r);
++    float d = length(max(vec2(qs, qt), vec2(0.0))) + min(max(qs, qt), 0.0) - r;
++    uint side; float along, len;
++    if (qs > qt) { side = ds > 0.0 ? 1u : 3u; along = dt + hh; len = 2.0 * hh; }
++    else         { side = dt > 0.0 ? 2u : 0u; along = ds + hw; len = 2.0 * hw; }
++    const float u = clamp(along / len, 0.0, 1.0);
++    float w = 0.0;
++    for (uint k = 0u; k < 3u; ++k)
++        w += p(P_WOB_A + side * 3u + k) * sin(float(k + 1u) * kPi * u + p(P_WOB_PH + side * 3u + k));
++    d -= w * sin(kPi * u);
++    const uint nq = uint(p(P_N_Q));
++    for (uint k = 0u; k < nq; ++k) {
++        const uint q = P_Q + kQStride * k;
++        float dq;
++        if (abs(p(q + 9u)) > 1.5) {
++            // an ellipse: centre q[0..1], radii q[2..3]; distance scaled by the
++            // smaller radius, exact on the boundary, which is all a penumbra reads
++            const vec2 rr = max(vec2(p(q + 2u), p(q + 3u)), vec2(1e-4));
++            dq = (length((st - vec2(p(q + 0u), p(q + 1u))) / rr) - 1.0) * min(rr.x, rr.y);
++        } else {
++            dq = sd_quad(st, q) - p(q + 8u);
++        }
++        d = p(q + 9u) > 0.0 ? min(d, dq) : max(d, -dq);
++    }
++    if (p(P_ROUGH_AMP) > 0.0) {
++        const uint seed = uint(p(P_ROUGH_SEED));
++        const float per = max(p(P_ROUGH_PERIOD), 1e-3);
++        d += p(P_ROUGH_AMP) * (value_noise(st.x / per, seed) + value_noise(st.y / per, seed ^ 0x5bd1e995u) - 1.0);
++    }
++    return d;
++}
++
++// The gate's shadow on the emulsion from a circular aperture: the lit fraction
++// of a disc of radius r cut by a straight edge at signed distance d.
++float penumbra_of(float d, float r) {
++    if (r <= 1e-6) return d < 0.0 ? 1.0 : 0.0;
++    const float u = clamp(-d / r, -1.0, 1.0);
++    return 0.5 + (u * sqrt(max(1.0 - u * u, 0.0)) + asin(u)) * (1.0 / kPi);
++}
++
++vec3 sample_frame(float fx, float fy, uint fw, uint fh) {
++    fx = clamp(fx, 0.0, float(fw) - 1.0);
++    fy = clamp(fy, 0.0, float(fh) - 1.0);
++    const uint x0 = uint(floor(fx)), y0 = uint(floor(fy));
++    const uint x1 = min(x0 + 1u, fw - 1u), y1 = min(y0 + 1u, fh - 1u);
++    const float ax = fx - float(x0), ay = fy - float(y0);
++    const uint i00 = 3u * (y0 * fw + x0), i01 = 3u * (y0 * fw + x1);
++    const uint i10 = 3u * (y1 * fw + x0), i11 = 3u * (y1 * fw + x1);
++    const vec3 a = vec3(frame_data.v[i00], frame_data.v[i00 + 1u], frame_data.v[i00 + 2u]);
++    const vec3 b = vec3(frame_data.v[i01], frame_data.v[i01 + 1u], frame_data.v[i01 + 2u]);
++    const vec3 c = vec3(frame_data.v[i10], frame_data.v[i10 + 1u], frame_data.v[i10 + 2u]);
++    const vec3 d = vec3(frame_data.v[i11], frame_data.v[i11 + 1u], frame_data.v[i11 + 2u]);
++    return mix(mix(a, b, ax), mix(c, d, ax), ay);
++}
++
++void main() {
++    const uint i = spk_global_index();
++    if (i >= meta.v[0]) return;
++    const uint cw = uint(p(P_CW));
++    const vec2 st = canvas_to_film(float(i % cw), float(i / cw));
++    const float W = p(P_FILM_W);
++    vec3 e = vec3(0.0);
++    if (p(P_CARRIER) > 1.5 || (st.y >= 0.0 && st.y <= W)) {
++        // A pair: past the middle of the gap, the second exposure of the same gate.
++        vec2 sg = st;
++        float shift = 0.0;
++        if (p(P_PAIR_ADV) > 0.0 && st.x > p(P_GS0) + 0.5 * (p(P_GW) + p(P_PAIR_ADV))) {
++            shift = p(P_PAIR_ADV);
++            sg.x -= shift;
++        }
++        const float cov = penumbra_of(gate_sdf(sg), p(P_PENUMBRA));
++        if (cov > 0.0) {
++            const float px = p(P_PX);
++            float fx, fy;
++            if (p(P_VERTICAL) < 0.5) { fx = (st.x - p(P_GS0)) / px - 0.5; fy = (st.y - p(P_GT0)) / px - 0.5; }
++            else                     { fx = (p(P_GT0) + p(P_GH) - st.y) / px - 0.5; fy = (st.x - p(P_GS0)) / px - 0.5; }
++            e += cov * sample_frame(fx, fy, uint(p(P_FW)), uint(p(P_FH)));
++        }
++        // Gate flare: the bevelled edge reflects scene light onto the film just
++        // outside the frame -- a thin line that follows the scene along the edge.
++        const float d_gate = gate_sdf(sg);
++        if (p(P_FLARE_AMP) > 0.0 && d_gate > -0.02 && d_gate < 6.0 * p(P_FLARE_WIDTH)) {
++            const float px = p(P_PX);
++            const float in_s = clamp(sg.x, p(P_GS0) + 0.12, p(P_GS0) + p(P_GW) - 0.12) + shift;
++            const float in_t = clamp(st.y, p(P_GT0) + 0.12, p(P_GT0) + p(P_GH) - 0.12);
++            float fx, fy;
++            if (p(P_VERTICAL) < 0.5) { fx = (in_s - p(P_GS0)) / px - 0.5; fy = (in_t - p(P_GT0)) / px - 0.5; }
++            else                     { fx = (p(P_GT0) + p(P_GH) - in_t) / px - 0.5; fy = (in_s - p(P_GS0)) / px - 0.5; }
++            const vec3 edge_light = sample_frame(fx, fy, uint(p(P_FW)), uint(p(P_FH)));
++            const float prof = exp(-max(d_gate, 0.0) / p(P_FLARE_WIDTH));
++            e += p(P_FLARE_AMP) * prof * edge_light;
++        }
++        // Edge fog: warm exposure decaying inward from each long edge, slowly
++        // varying along the length; and the spool leaks, seeded blobs on an edge.
++        const float d_top = max(st.y, 0.0), d_bot = max(W - st.y, 0.0);
++        const uint seed = uint(p(P_FOG_SEED));
++        const float period = max(p(P_FOG_PERIOD), 0.1);
++        const float nz = 0.6 * value_noise(st.x / period, seed) +
++                         0.4 * value_noise(st.x / (0.37 * period), seed ^ 0xA5A5A5A5u);
++        float fog = p(P_FOG_AMP) * exp(-min(d_top, d_bot) / max(p(P_FOG_WIDTH), 1e-3)) * (0.3 + 0.7 * nz);
++        const uint nl = uint(p(P_N_LEAKS));
++        for (uint k = 0u; k < nl; ++k) {
++            const uint b = P_LEAKS + 5u * k;
++            const float dd = p(b + 1u) < 0.5 ? d_top : d_bot;
++            const float ds = st.x - p(b);
++            fog += p(b + 2u) * exp(-ds * ds / (2.0 * p(b + 3u) * p(b + 3u))) * exp(-dd / p(b + 4u));
++        }
++        e += fog * vec3(p(P_FOG_R), p(P_FOG_G), p(P_FOG_B));
++    }
++    out_data.v[3u * i] = e.x;
++    out_data.v[3u * i + 1u] = e.y;
++    out_data.v[3u * i + 2u] = e.z;
++}
+diff --git a/engine/src/shaders/vulkan/spk_overscan_film_present.comp b/engine/src/shaders/vulkan/spk_overscan_film_present.comp
+new file mode 100644
+index 0000000..90d86ea
+--- /dev/null
++++ b/engine/src/shaders/vulkan/spk_overscan_film_present.comp
+@@ -0,0 +1,125 @@
++#version 450
++
++// spk_overscan_film_present.comp -- the Vulkan translation of kernel ④ in
++// src/shaders/overscan.metal: where there is no film -- the perforations, and
++// outside the strip -- the negative's density goes to the cmy that cancels this
++// film's base, so the enlarger or the scanner sees clear light.
++//
++// `perf_sdf` / `film_alpha` are copied from the Metal source rather than
++// shared: shader includes would put a second file between the two ports, and
++// this one is 60 lines.
++layout(local_size_x = 256) in;
++
++layout(set = 0, binding = 0, std430) readonly buffer CmyBuf { float v[]; } cmy;
++layout(set = 0, binding = 1, std430) readonly buffer ParamBuf { float v[]; } P;
++layout(set = 0, binding = 2, std430) readonly buffer MetaBuf { uint v[]; } meta;
++layout(set = 0, binding = 3, std430) writeonly buffer OutBuf { float v[]; } out_data;
++
++uint spk_global_index() {
++    return gl_GlobalInvocationID.y * (gl_NumWorkGroups.x * gl_WorkGroupSize.x) + gl_GlobalInvocationID.x;
++}
++
++// enum OsP -- mirror of src/pipeline/overscan.cpp.
++const uint P_CW = 0u, P_PX = 2u;
++const uint P_A00 = 5u, P_A01 = 6u, P_A10 = 7u, P_A11 = 8u, P_CS = 9u, P_CT = 10u, P_CU = 11u, P_CV = 12u;
++const uint P_FILM_W = 44u;
++const uint P_PERFORATED = 83u, P_PERF_PITCH = 84u, P_PERF_W = 85u, P_PERF_H = 86u, P_PERF_EDGE = 87u,
++           P_PERF_R = 88u, P_PERF_PHASE = 89u;
++const uint P_HOLE_C = 90u, P_HOLE_M = 91u, P_HOLE_Y = 92u;
++const uint P_PERF_SEED = 187u;
++const uint P_CARRIER = 199u;
++
++float p(uint i) { return P.v[i]; }
++
++vec2 canvas_to_film(float x, float y) {
++    const float u = (x + 0.5) * p(P_PX) - p(P_CU);
++    const float v = (y + 0.5) * p(P_PX) - p(P_CV);
++    return vec2(p(P_A00) * u + p(P_A01) * v + p(P_CS), p(P_A10) * u + p(P_A11) * v + p(P_CT));
++}
++
++uint hash_u(uint x) {
++    x ^= x >> 16; x *= 0x7feb352du; x ^= x >> 15; x *= 0x846ca68bu; x ^= x >> 16;
++    return x;
++}
++float hash_f(int i, uint seed) { return float(hash_u(uint(i) * 0x9E3779B9u ^ seed)) * (1.0 / 4294967295.0); }
++float value_noise(float x, uint seed) {
++    const float i0 = floor(x), f = x - i0;
++    const float w = f * f * (3.0 - 2.0 * f);
++    return mix(hash_f(int(i0), seed), hash_f(int(i0) + 1, seed), w);
++}
++
++// The nearest perforation's signed distance (mm, negative inside). KS holes are
++// punched to tight tolerances, not drawn: each hole sits a few microns off the
++// ideal pitch and row, is a few microns off size, its corners are not all the
++// same, and the punched edge is not a perfect line. `hole` returns the hole's
++// own hash (row and index) for the scan's dust.
++float perf_sdf(vec2 st, out uint hole) {
++    const float W = p(P_FILM_W);
++    const float pitch = p(P_PERF_PITCH), ph = p(P_PERF_PHASE);
++    // The nearest hole: the cell is centred on it.
++    const float k = floor((st.x - ph - 0.5 * p(P_PERF_W)) / pitch + 0.5);
++    const bool top = st.y < 0.5 * W;
++    const uint seed = uint(p(P_PERF_SEED));
++    hole = hash_u(uint(int(k) * 2 + (top ? 0 : 1)) * 0x9E3779B9u ^ seed);
++    const int h = int(hole & 0xFFFFu);
++    const float j0 = hash_f(h, seed ^ 0x1u) - 0.5, j1 = hash_f(h, seed ^ 0x2u) - 0.5;
++    const float j2 = hash_f(h, seed ^ 0x3u) - 0.5, j3 = hash_f(h, seed ^ 0x4u) - 0.5;
++    const float j4 = hash_f(h, seed ^ 0x5u) - 0.5;
++    const float wa = p(P_PERF_W) + 0.016 * j2, hc = p(P_PERF_H) + 0.016 * j3;
++    const float r = clamp(p(P_PERF_R) + 0.08 * j4, 0.3, 0.6);
++    const float sc = ph + k * pitch + 0.5 * p(P_PERF_W) + 0.020 * j0;
++    const float tc = (top ? p(P_PERF_EDGE) + 0.5 * p(P_PERF_H) : W - p(P_PERF_EDGE) - 0.5 * p(P_PERF_H)) + 0.024 * j1;
++    const vec2 q = abs(vec2(st.x - sc, st.y - tc)) - vec2(0.5 * wa - r, 0.5 * hc - r);
++    float d = length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0) - r;
++    // the punched edge: each hole's own roughness, 1-4 microns
++    const float rough = 0.001 + 0.003 * hash_f(h, seed ^ 0x6u);
++    d += rough * (value_noise(st.x / 0.05, seed ^ 0x77u) + value_noise(st.y / 0.05, seed ^ 0x99u) - 1.0) * 2.0;
++    // a burr or a chip on about one hole in four
++    if (hash_f(h, seed ^ 0x7u) < 0.25) {
++        const float ang = 6.2831853 * hash_f(h, seed ^ 0x8u);
++        const vec2 pb = vec2(sc, tc) + vec2(cos(ang) * 0.5 * wa, sin(ang) * 0.5 * hc);
++        const float sig = 0.020 + 0.030 * hash_f(h, seed ^ 0x9u);
++        const float amp = (hash_f(h, seed ^ 0xAu) < 0.5 ? -1.0 : 1.0) *
++                          (0.006 + 0.010 * hash_f(h, seed ^ 0xBu));
++        d += amp * exp(-dot(st - pb, st - pb) / (sig * sig));
++    }
++    return d;
++}
++
++// How soft a perforation's edge is in a scan, as the sigma of a Gaussian edge
++// in film millimetres (measured on reference_film/135, 2026-10-04).
++const float kHoleEdgeSigma = 0.017;
++
++// erf, Abramowitz and Stegun 7.1.26 (|error| < 1.5e-7).
++float erf_as(float x) {
++    const float t = 1.0 / (1.0 + 0.3275911 * abs(x));
++    const float y = 1.0 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * exp(-x * x);
++    return x < 0.0 ? -y : y;
++}
++
++// Where there is film: 1 on the strip, 0 in the perforations and past its edges.
++float film_alpha(vec2 st) {
++    const float W = p(P_FILM_W), px = p(P_PX);
++    float a = p(P_CARRIER) > 1.5 ? 1.0 : clamp(min(st.y, W - st.y) / px + 0.5, 0.0, 1.0);
++    if (p(P_PERFORATED) > 0.5) {
++        uint hole;
++        // The hole's edge as the scan resolves it: the measured softness, and
++        // the pixel's own width (a one-pixel ramp is a sigma of 0.31 px).
++        const float sigma = sqrt(kHoleEdgeSigma * kHoleEdgeSigma + 0.0961 * px * px);
++        a *= 0.5 + 0.5 * erf_as(perf_sdf(st, hole) / (1.41421356 * sigma));
++    }
++    return a;
++}
++
++void main() {
++    const uint i = spk_global_index();
++    if (i >= meta.v[0]) return;
++    const uint cw = uint(p(P_CW));
++    const float a = film_alpha(canvas_to_film(float(i % cw), float(i / cw)));
++    const vec3 c = vec3(cmy.v[3u * i], cmy.v[3u * i + 1u], cmy.v[3u * i + 2u]);
++    const vec3 hole = vec3(p(P_HOLE_C), p(P_HOLE_M), p(P_HOLE_Y));
++    const vec3 r3 = a * c + (1.0 - a) * hole;
++    out_data.v[3u * i] = r3.x;
++    out_data.v[3u * i + 1u] = r3.y;
++    out_data.v[3u * i + 2u] = r3.z;
++}
+diff --git a/engine/src/shaders/vulkan/spk_overscan_light.comp b/engine/src/shaders/vulkan/spk_overscan_light.comp
+new file mode 100644
+index 0000000..f1c2333
+--- /dev/null
++++ b/engine/src/shaders/vulkan/spk_overscan_light.comp
+@@ -0,0 +1,161 @@
++#version 450
++
++// spk_overscan_light.comp -- the Vulkan translation of kernel ⑤ in
++// src/shaders/overscan.metal (RFC-032 §30.5, §31): the scan's view of the
++// holes. Inside a hole: the picture's own white (holes = white) or a black
++// backing. Around it the cut wall: the punch shears the top of the base clean
++// and fractures the rest at a slant, so a scan seen a little off-axis sees a
++// band where the base thins from full to nothing.
++//
++// `perf_sdf` / `film_alpha` are copied from the Metal source; see the note in
++// spk_overscan_film_present.comp.
++layout(local_size_x = 256) in;
++
++layout(set = 0, binding = 0, std430) readonly buffer RgbBuf { float v[]; } rgb;
++layout(set = 0, binding = 1, std430) readonly buffer ParamBuf { float v[]; } P;
++layout(set = 0, binding = 2, std430) readonly buffer MetaBuf { uint v[]; } meta;
++layout(set = 0, binding = 3, std430) writeonly buffer OutBuf { float v[]; } out_data;
++
++uint spk_global_index() {
++    return gl_GlobalInvocationID.y * (gl_NumWorkGroups.x * gl_WorkGroupSize.x) + gl_GlobalInvocationID.x;
++}
++
++// enum OsP -- mirror of src/pipeline/overscan.cpp.
++const uint P_CW = 0u, P_PX = 2u;
++const uint P_A00 = 5u, P_A01 = 6u, P_A10 = 7u, P_A11 = 8u, P_CS = 9u, P_CT = 10u, P_CU = 11u, P_CV = 12u;
++const uint P_FILM_W = 44u;
++const uint P_PERFORATED = 83u, P_PERF_PITCH = 84u, P_PERF_W = 85u, P_PERF_H = 86u, P_PERF_EDGE = 87u,
++           P_PERF_R = 88u, P_PERF_PHASE = 89u;
++const uint P_HOLES_LIGHT = 183u, P_LIGHT_R = 184u, P_LIGHT_G = 185u, P_LIGHT_B = 186u;
++const uint P_PERF_SEED = 187u;
++const uint P_WALL_VS = 191u, P_WALL_VT = 192u, P_BASE_R = 194u, P_BASE_G = 195u, P_BASE_B = 196u,
++           P_WALL_GLOW = 197u, P_WALL_SCATTER = 198u;
++const uint P_CARRIER = 199u;
++
++float p(uint i) { return P.v[i]; }
++
++vec2 canvas_to_film(float x, float y) {
++    const float u = (x + 0.5) * p(P_PX) - p(P_CU);
++    const float v = (y + 0.5) * p(P_PX) - p(P_CV);
++    return vec2(p(P_A00) * u + p(P_A01) * v + p(P_CS), p(P_A10) * u + p(P_A11) * v + p(P_CT));
++}
++
++uint hash_u(uint x) {
++    x ^= x >> 16; x *= 0x7feb352du; x ^= x >> 15; x *= 0x846ca68bu; x ^= x >> 16;
++    return x;
++}
++float hash_f(int i, uint seed) { return float(hash_u(uint(i) * 0x9E3779B9u ^ seed)) * (1.0 / 4294967295.0); }
++float value_noise(float x, uint seed) {
++    const float i0 = floor(x), f = x - i0;
++    const float w = f * f * (3.0 - 2.0 * f);
++    return mix(hash_f(int(i0), seed), hash_f(int(i0) + 1, seed), w);
++}
++
++// The nearest perforation's signed distance (mm, negative inside); see
++// spk_overscan_film_present.comp for the commentary.
++float perf_sdf(vec2 st, out uint hole) {
++    const float W = p(P_FILM_W);
++    const float pitch = p(P_PERF_PITCH), ph = p(P_PERF_PHASE);
++    const float k = floor((st.x - ph - 0.5 * p(P_PERF_W)) / pitch + 0.5);
++    const bool top = st.y < 0.5 * W;
++    const uint seed = uint(p(P_PERF_SEED));
++    hole = hash_u(uint(int(k) * 2 + (top ? 0 : 1)) * 0x9E3779B9u ^ seed);
++    const int h = int(hole & 0xFFFFu);
++    const float j0 = hash_f(h, seed ^ 0x1u) - 0.5, j1 = hash_f(h, seed ^ 0x2u) - 0.5;
++    const float j2 = hash_f(h, seed ^ 0x3u) - 0.5, j3 = hash_f(h, seed ^ 0x4u) - 0.5;
++    const float j4 = hash_f(h, seed ^ 0x5u) - 0.5;
++    const float wa = p(P_PERF_W) + 0.016 * j2, hc = p(P_PERF_H) + 0.016 * j3;
++    const float r = clamp(p(P_PERF_R) + 0.08 * j4, 0.3, 0.6);
++    const float sc = ph + k * pitch + 0.5 * p(P_PERF_W) + 0.020 * j0;
++    const float tc = (top ? p(P_PERF_EDGE) + 0.5 * p(P_PERF_H) : W - p(P_PERF_EDGE) - 0.5 * p(P_PERF_H)) + 0.024 * j1;
++    const vec2 q = abs(vec2(st.x - sc, st.y - tc)) - vec2(0.5 * wa - r, 0.5 * hc - r);
++    float d = length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0) - r;
++    const float rough = 0.001 + 0.003 * hash_f(h, seed ^ 0x6u);
++    d += rough * (value_noise(st.x / 0.05, seed ^ 0x77u) + value_noise(st.y / 0.05, seed ^ 0x99u) - 1.0) * 2.0;
++    if (hash_f(h, seed ^ 0x7u) < 0.25) {
++        const float ang = 6.2831853 * hash_f(h, seed ^ 0x8u);
++        const vec2 pb = vec2(sc, tc) + vec2(cos(ang) * 0.5 * wa, sin(ang) * 0.5 * hc);
++        const float sig = 0.020 + 0.030 * hash_f(h, seed ^ 0x9u);
++        const float amp = (hash_f(h, seed ^ 0xAu) < 0.5 ? -1.0 : 1.0) *
++                          (0.006 + 0.010 * hash_f(h, seed ^ 0xBu));
++        d += amp * exp(-dot(st - pb, st - pb) / (sig * sig));
++    }
++    return d;
++}
++
++const float kHoleEdgeSigma = 0.017;
++
++float erf_as(float x) {
++    const float t = 1.0 / (1.0 + 0.3275911 * abs(x));
++    const float y = 1.0 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * exp(-x * x);
++    return x < 0.0 ? -y : y;
++}
++
++float film_alpha(vec2 st) {
++    const float W = p(P_FILM_W), px = p(P_PX);
++    float a = p(P_CARRIER) > 1.5 ? 1.0 : clamp(min(st.y, W - st.y) / px + 0.5, 0.0, 1.0);
++    if (p(P_PERFORATED) > 0.5) {
++        uint hole;
++        const float sigma = sqrt(kHoleEdgeSigma * kHoleEdgeSigma + 0.0961 * px * px);
++        a *= 0.5 + 0.5 * erf_as(perf_sdf(st, hole) / (1.41421356 * sigma));
++    }
++    return a;
++}
++
++void main() {
++    const uint i = spk_global_index();
++    if (i >= meta.v[0]) return;
++    const uint cw = uint(p(P_CW));
++    const vec2 st = canvas_to_film(float(i % cw), float(i / cw));
++    const float a = film_alpha(st);
++    const bool white = p(P_HOLES_LIGHT) > 0.5;
++    vec3 light = vec3(p(P_LIGHT_R), p(P_LIGHT_G), p(P_LIGHT_B));
++    vec3 c = vec3(rgb.v[3u * i], rgb.v[3u * i + 1u], rgb.v[3u * i + 2u]);
++    if (p(P_PERFORATED) > 0.5) {
++        uint hole;
++        const float d = perf_sdf(st, hole);
++        // The cut is not a perfectly vertical knife: the base is a little
++        // rounded where the punch went through, and a scan sees that as a soft
++        // shoulder just outside the hole.
++        const uint seed = uint(p(P_PERF_SEED));
++        const int h = int(hole & 0xFFFFu);
++        if (d > -0.03 && d < 0.15) {
++            const float e = 0.003;
++            uint hh0, hh1, hh2, hh3;
++            const float gx = perf_sdf(st + vec2(e, 0.0), hh0) - perf_sdf(st - vec2(e, 0.0), hh1);
++            const float gy = perf_sdf(st + vec2(0.0, e), hh2) - perf_sdf(st - vec2(0.0, e), hh3);
++            const vec2 g = vec2(gx, gy);
++            const vec2 nrm = g / max(length(g), 1e-6);
++            const vec2 vdir = vec2(p(P_WALL_VS), p(P_WALL_VT));
++            // how much this stretch of this hole's outline shows: per hole,
++            // patchy along the outline, a little more on the scan's leaning side
++            const float per_hole = 0.4 + 0.6 * hash_f(h, seed ^ 0xE1u);
++            const float patchy = smoothstep(0.25, 0.75, 0.5 * (value_noise(st.x / 0.35, seed ^ uint(h)) +
++                                                              value_noise(st.y / 0.35, seed ^ uint(h) ^ 0x3Cu)));
++            const float side = 0.6 + 0.8 * max(0.0, dot(nrm, vdir));
++            const float k = per_hole * patchy * side;
++            // the base's tint, mostly washed out
++            const vec3 tint = mix(vec3(1.0), vec3(p(P_BASE_R), p(P_BASE_G), p(P_BASE_B)), 0.3);
++            const float lam = p(P_WALL_SCATTER);
++            if (d >= 0.0) {
++                const float lift = p(P_WALL_GLOW) * k * exp(-d / lam);
++                c += lift * tint * (white ? light : vec3(1.0));
++            } else if (white && hash_f(h, seed ^ 0xE4u) < 0.5) {
++                light *= 1.0 - 0.12 * k * (1.0 - tint) * exp(d / 0.012);
++            }
++        }
++        if (white && d >= 0.0) {
++            // a faint flare from the hole's light into the film, on some holes
++            const float fl = 0.012 * hash_f(h, seed ^ 0xC4u) * step(0.5, hash_f(h, seed ^ 0xC5u));
++            c += fl * exp(-d / 0.025) * light;
++        }
++    }
++    // Past the film's long edges is the scan's carrier, not a hole.
++    const float W = p(P_FILM_W), px = p(P_PX);
++    const float on_strip = p(P_CARRIER) > 1.5 ? 1.0 : clamp(min(st.y, W - st.y) / px + 0.5, 0.0, 1.0);
++    const float in_film = on_strip > 0.0 ? a / on_strip : 0.0;
++    const vec3 r3 = mix(vec3(p(P_CARRIER)), mix(light, c, in_film), on_strip);
++    out_data.v[3u * i] = r3.x;
++    out_data.v[3u * i + 1u] = r3.y;
++    out_data.v[3u * i + 2u] = r3.z;
++}

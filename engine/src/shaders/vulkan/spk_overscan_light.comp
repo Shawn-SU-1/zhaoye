@@ -1,0 +1,161 @@
+#version 450
+
+// spk_overscan_light.comp -- the Vulkan translation of kernel ⑤ in
+// src/shaders/overscan.metal (RFC-032 §30.5, §31): the scan's view of the
+// holes. Inside a hole: the picture's own white (holes = white) or a black
+// backing. Around it the cut wall: the punch shears the top of the base clean
+// and fractures the rest at a slant, so a scan seen a little off-axis sees a
+// band where the base thins from full to nothing.
+//
+// `perf_sdf` / `film_alpha` are copied from the Metal source; see the note in
+// spk_overscan_film_present.comp.
+layout(local_size_x = 256) in;
+
+layout(set = 0, binding = 0, std430) readonly buffer RgbBuf { float v[]; } rgb;
+layout(set = 0, binding = 1, std430) readonly buffer ParamBuf { float v[]; } P;
+layout(set = 0, binding = 2, std430) readonly buffer MetaBuf { uint v[]; } meta;
+layout(set = 0, binding = 3, std430) writeonly buffer OutBuf { float v[]; } out_data;
+
+uint spk_global_index() {
+    return gl_GlobalInvocationID.y * (gl_NumWorkGroups.x * gl_WorkGroupSize.x) + gl_GlobalInvocationID.x;
+}
+
+// enum OsP -- mirror of src/pipeline/overscan.cpp.
+const uint P_CW = 0u, P_PX = 2u;
+const uint P_A00 = 5u, P_A01 = 6u, P_A10 = 7u, P_A11 = 8u, P_CS = 9u, P_CT = 10u, P_CU = 11u, P_CV = 12u;
+const uint P_FILM_W = 44u;
+const uint P_PERFORATED = 83u, P_PERF_PITCH = 84u, P_PERF_W = 85u, P_PERF_H = 86u, P_PERF_EDGE = 87u,
+           P_PERF_R = 88u, P_PERF_PHASE = 89u;
+const uint P_HOLES_LIGHT = 183u, P_LIGHT_R = 184u, P_LIGHT_G = 185u, P_LIGHT_B = 186u;
+const uint P_PERF_SEED = 187u;
+const uint P_WALL_VS = 191u, P_WALL_VT = 192u, P_BASE_R = 194u, P_BASE_G = 195u, P_BASE_B = 196u,
+           P_WALL_GLOW = 197u, P_WALL_SCATTER = 198u;
+const uint P_CARRIER = 199u;
+
+float p(uint i) { return P.v[i]; }
+
+vec2 canvas_to_film(float x, float y) {
+    const float u = (x + 0.5) * p(P_PX) - p(P_CU);
+    const float v = (y + 0.5) * p(P_PX) - p(P_CV);
+    return vec2(p(P_A00) * u + p(P_A01) * v + p(P_CS), p(P_A10) * u + p(P_A11) * v + p(P_CT));
+}
+
+uint hash_u(uint x) {
+    x ^= x >> 16; x *= 0x7feb352du; x ^= x >> 15; x *= 0x846ca68bu; x ^= x >> 16;
+    return x;
+}
+float hash_f(int i, uint seed) { return float(hash_u(uint(i) * 0x9E3779B9u ^ seed)) * (1.0 / 4294967295.0); }
+float value_noise(float x, uint seed) {
+    const float i0 = floor(x), f = x - i0;
+    const float w = f * f * (3.0 - 2.0 * f);
+    return mix(hash_f(int(i0), seed), hash_f(int(i0) + 1, seed), w);
+}
+
+// The nearest perforation's signed distance (mm, negative inside); see
+// spk_overscan_film_present.comp for the commentary.
+float perf_sdf(vec2 st, out uint hole) {
+    const float W = p(P_FILM_W);
+    const float pitch = p(P_PERF_PITCH), ph = p(P_PERF_PHASE);
+    const float k = floor((st.x - ph - 0.5 * p(P_PERF_W)) / pitch + 0.5);
+    const bool top = st.y < 0.5 * W;
+    const uint seed = uint(p(P_PERF_SEED));
+    hole = hash_u(uint(int(k) * 2 + (top ? 0 : 1)) * 0x9E3779B9u ^ seed);
+    const int h = int(hole & 0xFFFFu);
+    const float j0 = hash_f(h, seed ^ 0x1u) - 0.5, j1 = hash_f(h, seed ^ 0x2u) - 0.5;
+    const float j2 = hash_f(h, seed ^ 0x3u) - 0.5, j3 = hash_f(h, seed ^ 0x4u) - 0.5;
+    const float j4 = hash_f(h, seed ^ 0x5u) - 0.5;
+    const float wa = p(P_PERF_W) + 0.016 * j2, hc = p(P_PERF_H) + 0.016 * j3;
+    const float r = clamp(p(P_PERF_R) + 0.08 * j4, 0.3, 0.6);
+    const float sc = ph + k * pitch + 0.5 * p(P_PERF_W) + 0.020 * j0;
+    const float tc = (top ? p(P_PERF_EDGE) + 0.5 * p(P_PERF_H) : W - p(P_PERF_EDGE) - 0.5 * p(P_PERF_H)) + 0.024 * j1;
+    const vec2 q = abs(vec2(st.x - sc, st.y - tc)) - vec2(0.5 * wa - r, 0.5 * hc - r);
+    float d = length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0) - r;
+    const float rough = 0.001 + 0.003 * hash_f(h, seed ^ 0x6u);
+    d += rough * (value_noise(st.x / 0.05, seed ^ 0x77u) + value_noise(st.y / 0.05, seed ^ 0x99u) - 1.0) * 2.0;
+    if (hash_f(h, seed ^ 0x7u) < 0.25) {
+        const float ang = 6.2831853 * hash_f(h, seed ^ 0x8u);
+        const vec2 pb = vec2(sc, tc) + vec2(cos(ang) * 0.5 * wa, sin(ang) * 0.5 * hc);
+        const float sig = 0.020 + 0.030 * hash_f(h, seed ^ 0x9u);
+        const float amp = (hash_f(h, seed ^ 0xAu) < 0.5 ? -1.0 : 1.0) *
+                          (0.006 + 0.010 * hash_f(h, seed ^ 0xBu));
+        d += amp * exp(-dot(st - pb, st - pb) / (sig * sig));
+    }
+    return d;
+}
+
+const float kHoleEdgeSigma = 0.017;
+
+float erf_as(float x) {
+    const float t = 1.0 / (1.0 + 0.3275911 * abs(x));
+    const float y = 1.0 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * exp(-x * x);
+    return x < 0.0 ? -y : y;
+}
+
+float film_alpha(vec2 st) {
+    const float W = p(P_FILM_W), px = p(P_PX);
+    float a = p(P_CARRIER) > 1.5 ? 1.0 : clamp(min(st.y, W - st.y) / px + 0.5, 0.0, 1.0);
+    if (p(P_PERFORATED) > 0.5) {
+        uint hole;
+        const float sigma = sqrt(kHoleEdgeSigma * kHoleEdgeSigma + 0.0961 * px * px);
+        a *= 0.5 + 0.5 * erf_as(perf_sdf(st, hole) / (1.41421356 * sigma));
+    }
+    return a;
+}
+
+void main() {
+    const uint i = spk_global_index();
+    if (i >= meta.v[0]) return;
+    const uint cw = uint(p(P_CW));
+    const vec2 st = canvas_to_film(float(i % cw), float(i / cw));
+    const float a = film_alpha(st);
+    const bool white = p(P_HOLES_LIGHT) > 0.5;
+    vec3 light = vec3(p(P_LIGHT_R), p(P_LIGHT_G), p(P_LIGHT_B));
+    vec3 c = vec3(rgb.v[3u * i], rgb.v[3u * i + 1u], rgb.v[3u * i + 2u]);
+    if (p(P_PERFORATED) > 0.5) {
+        uint hole;
+        const float d = perf_sdf(st, hole);
+        // The cut is not a perfectly vertical knife: the base is a little
+        // rounded where the punch went through, and a scan sees that as a soft
+        // shoulder just outside the hole.
+        const uint seed = uint(p(P_PERF_SEED));
+        const int h = int(hole & 0xFFFFu);
+        if (d > -0.03 && d < 0.15) {
+            const float e = 0.003;
+            uint hh0, hh1, hh2, hh3;
+            const float gx = perf_sdf(st + vec2(e, 0.0), hh0) - perf_sdf(st - vec2(e, 0.0), hh1);
+            const float gy = perf_sdf(st + vec2(0.0, e), hh2) - perf_sdf(st - vec2(0.0, e), hh3);
+            const vec2 g = vec2(gx, gy);
+            const vec2 nrm = g / max(length(g), 1e-6);
+            const vec2 vdir = vec2(p(P_WALL_VS), p(P_WALL_VT));
+            // how much this stretch of this hole's outline shows: per hole,
+            // patchy along the outline, a little more on the scan's leaning side
+            const float per_hole = 0.4 + 0.6 * hash_f(h, seed ^ 0xE1u);
+            const float patchy = smoothstep(0.25, 0.75, 0.5 * (value_noise(st.x / 0.35, seed ^ uint(h)) +
+                                                              value_noise(st.y / 0.35, seed ^ uint(h) ^ 0x3Cu)));
+            const float side = 0.6 + 0.8 * max(0.0, dot(nrm, vdir));
+            const float k = per_hole * patchy * side;
+            // the base's tint, mostly washed out
+            const vec3 tint = mix(vec3(1.0), vec3(p(P_BASE_R), p(P_BASE_G), p(P_BASE_B)), 0.3);
+            const float lam = p(P_WALL_SCATTER);
+            if (d >= 0.0) {
+                const float lift = p(P_WALL_GLOW) * k * exp(-d / lam);
+                c += lift * tint * (white ? light : vec3(1.0));
+            } else if (white && hash_f(h, seed ^ 0xE4u) < 0.5) {
+                light *= 1.0 - 0.12 * k * (1.0 - tint) * exp(d / 0.012);
+            }
+        }
+        if (white && d >= 0.0) {
+            // a faint flare from the hole's light into the film, on some holes
+            const float fl = 0.012 * hash_f(h, seed ^ 0xC4u) * step(0.5, hash_f(h, seed ^ 0xC5u));
+            c += fl * exp(-d / 0.025) * light;
+        }
+    }
+    // Past the film's long edges is the scan's carrier, not a hole.
+    const float W = p(P_FILM_W), px = p(P_PX);
+    const float on_strip = p(P_CARRIER) > 1.5 ? 1.0 : clamp(min(st.y, W - st.y) / px + 0.5, 0.0, 1.0);
+    const float in_film = on_strip > 0.0 ? a / on_strip : 0.0;
+    const vec3 r3 = mix(vec3(p(P_CARRIER)), mix(light, c, in_film), on_strip);
+    out_data.v[3u * i] = r3.x;
+    out_data.v[3u * i + 1u] = r3.y;
+    out_data.v[3u * i + 2u] = r3.z;
+}

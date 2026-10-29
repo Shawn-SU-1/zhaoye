@@ -1,0 +1,44 @@
+# Gradle
+.gradle/
+.gradle-home/
+.gradle-dist/
+build/
+app/build/
+captures/
+.externalNativeBuild/
+.cxx/
+local.properties
+
+# Kotlin
+.kotlin/
+
+# Android
+.android/
+.android-home/
+android-home/
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Native build output. libspektralab.so is produced by scripts/build-native.sh;
+# it is not committed because it is a build artifact of ./engine.
+app/src/main/jniLibs/
+build.bak/
+build/native/
+build/libraw/
+build/probe/
+
+# Toolchains fetched by the build scripts
+third_party/android-ndk-r28c/
+third_party/LibRaw-0.22.2/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Logs and scratch
+*.log
+*.orig
+*.rej
