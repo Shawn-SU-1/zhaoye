@@ -8,7 +8,7 @@
 安卓暗房：同一份 C++20 光谱冲印引擎，用 Vulkan compute 在手机上跑，
 不是对着效果重画一遍滤镜。
 
-**下载**：[照夜 0.1.0 · arm64-v8a APK](https://github.com/Shawn-SU-1/zhaoye/releases/latest)（29.9 MB）
+**下载**：[照夜 0.1.1 · arm64-v8a APK](https://github.com/Shawn-SU-1/zhaoye/releases/latest)（29.9 MB）
 ——Android 8.0 以上、支持 Vulkan 1.1 的 arm64 真机。装不上或出问题，先看[装上](#装上)
 和[出问题了](#出问题了)；打算修什么、不做什么，见 [ROADMAP.md](ROADMAP.md)。
 
@@ -125,13 +125,13 @@ x86 模拟器跑不了，真机需要 Vulkan 1.1 以上。
 ### 直接装
 
 到 [Releases](https://github.com/Shawn-SU-1/zhaoye/releases/latest) 取
-`Zhaoye-0.1.0-arm64-v8a.apk`（29.9 MB），在手机上打开安装。这是侧载，系统会问一次
+`Zhaoye-0.1.1-arm64-v8a.apk`（29.9 MB），在手机上打开安装。这是侧载，系统会问一次
 要不要允许安装未知来源应用。签名是 RSA-4096 的发布密钥，证书 SHA-256
 `c4b5c76576838005bf90de0a55331341d9b3132e0ace0077a581385f3b43ca65`；apk 自身的校验值：
 
 ```bash
-sha256sum Zhaoye-0.1.0-arm64-v8a.apk
-# 380cdd40cc96d94cf5658a4c902ffafd1ee40066e4c6ce46df9ce20b16199549
+sha256sum Zhaoye-0.1.1-arm64-v8a.apk
+# 4d526efc6ada9413c4dc01677eb1474d3080152cfe215b316b659f4540894056
 ```
 
 以前在本地装过 debug 版的，**先卸载再装**：签名不同，覆盖安装会被系统拒绝。

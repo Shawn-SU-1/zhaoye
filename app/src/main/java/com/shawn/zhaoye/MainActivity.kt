@@ -1,7 +1,12 @@
 package com.shawn.zhaoye
 
+import android.app.Activity
+import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.provider.DocumentsContract
+import android.provider.MediaStore
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.enableEdgeToEdge
@@ -12,6 +17,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContract
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -71,6 +77,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -159,12 +166,46 @@ private fun DarkroomScreen(
         else vm.openFile(java.io.File(target))
     }
 
-    // OpenDocument rather than PickVisualMedia: the photo picker only offers
-    // what the system recognises as an image, and a .ARW is not that.
-    val pickPhoto = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument(),
+    // Three doors, because a phone has three different ideas of where "my
+    // photos" are.
+    //
+    // 1. The system photo picker -- the right answer, and it needs no storage
+    //    permission. But it ships inside Google Play services, so on a ROM
+    //    without them isPhotoPickerAvailable() is false and the contract
+    //    quietly falls back to the document browser: the very screen this is
+    //    meant to get away from.
+    // 2. ACTION_PICK on the media store. Every gallery app on every ROM
+    //    answers it, GMS or not, and it opens the album the phone really has.
+    // 3. The document browser, kept for RAW. No gallery indexes a .ARW, so
+    //    there has to be a door that still reaches one. It now opens on the
+    //    pictures root instead of wherever the last pick left off.
+    val context = LocalContext.current
+    val hasSystemPicker = remember {
+        ActivityResultContracts.PickVisualMedia.isPhotoPickerAvailable(context)
+    }
+    val pickSystem = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia(),
     ) { uri ->
         if (uri != null) vm.open(uri)
+    }
+    val pickGallery = rememberLauncherForActivityResult(PickFromGallery()) { uri ->
+        if (uri != null) vm.open(uri)
+    }
+    val pickFile = rememberLauncherForActivityResult(OpenRawFile()) { uri ->
+        if (uri != null) vm.open(uri)
+    }
+    val openGallery: () -> Unit = {
+        if (hasSystemPicker) {
+            pickSystem.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+            )
+        } else {
+            // A ROM with neither a picker nor a gallery that answers ACTION_PICK
+            // is rare, but throwing ActivityNotFoundException at the user is not
+            // an option; the document browser still works.
+            runCatching { pickGallery.launch(galleryIntent()) }
+                .onFailure { pickFile.launch(arrayOf("image/*")) }
+        }
     }
 
     // Edge to edge is mandatory from target 35, so the background is painted
@@ -180,7 +221,7 @@ private fun DarkroomScreen(
 
         Header(
             vm = vm,
-            onPick = { pickPhoto.launch(arrayOf("*/*")) },
+            onPick = openGallery,
             onExport = { vm.export(it) },
             onSettings = onSettings,
         )
@@ -213,9 +254,13 @@ private fun DarkroomScreen(
                     )
                     Spacer(Modifier.height(10.dp))
                     Button(
-                        onClick = { pickPhoto.launch(arrayOf("*/*")) },
+                        onClick = openGallery,
                         colors = ButtonDefaults.buttonColors(containerColor = Amber, contentColor = Ink),
-                    ) { Text("打开照片") }
+                    ) { Text("从相册选") }
+                    Spacer(Modifier.height(4.dp))
+                    TextButton(onClick = { pickFile.launch(arrayOf("*/*")) }) {
+                        Text("选 RAW 或其他文件", color = Faint, fontSize = 11.sp)
+                    }
                 }
             }
 
@@ -383,6 +428,33 @@ private fun DarkroomScreen(
 }
 
 private enum class Picking { Film, Paper }
+
+/**
+ * ACTION_PICK on the media store: opens whichever gallery the phone actually
+ * ships, with or without Google Play services.
+ *
+ * StartActivityForResult is final in activity 1.8.0 and cannot be subclassed,
+ * so the intent is built by the caller and this only has to hand the Uri back.
+ */
+private class PickFromGallery : ActivityResultContract<Intent, Uri?>() {
+    override fun createIntent(context: Context, input: Intent): Intent = input
+
+    override fun parseResult(resultCode: Int, intent: Intent?): Uri? =
+        if (resultCode == Activity.RESULT_OK) intent?.data else null
+}
+
+private fun galleryIntent(): Intent =
+    Intent(Intent.ACTION_PICK)
+        .setDataAndType(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "image/*")
+
+/** The document browser, opened on the pictures root rather than "Recent". */
+private class OpenRawFile : ActivityResultContracts.OpenDocument() {
+    override fun createIntent(context: Context, input: Array<String>): Intent =
+        super.createIntent(context, input).putExtra(
+            DocumentsContract.EXTRA_INITIAL_URI,
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+        )
+}
 
 @Composable
 private fun Header(
