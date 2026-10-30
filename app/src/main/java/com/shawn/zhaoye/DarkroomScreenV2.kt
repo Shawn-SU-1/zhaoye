@@ -94,6 +94,9 @@ fun DarkroomScreenV2(
             vm.releaseInspection()
         }
     }
+    LaunchedEffect(comparing, vm.preview, vm.overscanOn) {
+        if (comparing && vm.overscanOn) vm.requestComparison() else vm.releaseComparison()
+    }
 
     LaunchedEffect(debugImage) {
         val target = debugImage.orEmpty()
@@ -147,13 +150,19 @@ fun DarkroomScreenV2(
             contentAlignment = Alignment.Center,
         ) {
             val bitmap = vm.preview
+            val comparisonReady = !vm.overscanOn || vm.comparisonPreview != null
             if (bitmap != null) {
+                val previewBitmap = if (comparing && vm.overscanOn) {
+                    vm.comparisonPreview ?: bitmap
+                } else {
+                    vm.inspectionPreview ?: bitmap
+                }
                 ZoomablePreview(
-                    bitmap = vm.inspectionPreview ?: bitmap,
-                    originalBitmap = vm.originalPreview.takeIf { comparing },
-                    compareProgress = compareProgress.takeIf { comparing },
+                    bitmap = previewBitmap,
+                    originalBitmap = vm.originalPreview.takeIf { comparing && comparisonReady },
+                    compareProgress = compareProgress.takeIf { comparing && comparisonReady },
                     longPressBitmap = vm.originalPreview,
-                    colorFilter = interactiveColorFilter(vm),
+                    colorFilter = null,
                     modifier = Modifier.fillMaxSize().padding(6.dp),
                     onScaleChanged = { zoomScale = it },
                 )
@@ -205,9 +214,21 @@ fun DarkroomScreenV2(
                             .background(Color(0xA6080707))
                             .padding(horizontal = 8.dp, vertical = 3.dp),
                     )
-                } else {
+                } else if (comparisonReady) {
                     CompareLabel("原图", Alignment.TopStart)
                     CompareLabel("成片", Alignment.TopEnd)
+                } else {
+                    Text(
+                        if (vm.comparisonLoading) "正在准备无片边对比…" else "对比准备失败",
+                        color = Amber,
+                        fontSize = 11.sp,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(10.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color(0xC4080707))
+                            .padding(horizontal = 8.dp, vertical = 3.dp),
+                    )
                 }
             }
         }

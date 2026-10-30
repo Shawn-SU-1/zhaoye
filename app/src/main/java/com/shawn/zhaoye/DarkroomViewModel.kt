@@ -129,6 +129,7 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
     private val ticket = AtomicInteger(0)
     private var pendingFile: java.io.File? = null
     private var inspectionJob: Job? = null
+    private var comparisonJob: Job? = null
 
     // What the current negative was made from, so export can go back to the
     // full-size frame. A launch intent hands over a path rather than a Uri, so
@@ -148,6 +149,10 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
     var inspectionPreview by mutableStateOf<Bitmap?>(null)
         private set
     var inspectionLoading by mutableStateOf(false)
+        private set
+    var comparisonPreview by mutableStateOf<Bitmap?>(null)
+        private set
+    var comparisonLoading by mutableStateOf(false)
         private set
     var isScrubbing by mutableStateOf(false)
         private set
@@ -351,6 +356,7 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
             preview = null
             originalPreview = null
             clearInspection()
+            clearComparison()
             readNote = ""
             val opened = openSession(handle, file, 1600, remember = true)
             if (opened == null) {
@@ -512,6 +518,7 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
             preview = null
             originalPreview = null
             clearInspection()
+            clearComparison()
             var failure = ""
             val created = withContext(native) {
                 val opened = bitmap?.let { frame ->
@@ -557,6 +564,7 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
 
     fun update(block: () -> Unit) {
         clearInspection()
+        clearComparison()
         block()
         persist()
         render(full = false, debounceMs = 70)
@@ -565,6 +573,7 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
     /** Slider movement: update the cheap proxy now and conflate native work. */
     fun updateLive(block: () -> Unit) {
         clearInspection()
+        clearComparison()
         block()
         isScrubbing = true
         render(full = false, debounceMs = 90)
@@ -642,6 +651,71 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
         inspectionJob = null
         inspectionLoading = false
         inspectionPreview = null
+    }
+
+    /**
+     * Comparison is about the photograph, so an overscan print is temporarily
+     * reprinted without its film carrier and date back. Both sides then have
+     * the source frame's aspect ratio and align without guessing at the gate
+     * position.
+     */
+    fun requestComparison() {
+        if (!overscanOn) {
+            clearComparison()
+            return
+        }
+        if (comparisonPreview != null || comparisonLoading) return
+        val file = lastFile
+        val uri = lastUri
+        if (file == null && uri == null) return
+        val handle = engine ?: return
+        comparisonJob?.cancel()
+        comparisonJob = viewModelScope.launch {
+            comparisonLoading = true
+            val opened = if (file != null) {
+                openSession(handle, file, 1600, remember = false)
+            } else {
+                val frame = withContext(Dispatchers.IO) { decode(getApplication(), uri!!, 1600) }
+                frame?.let {
+                    frameW = it.width
+                    frameH = it.height
+                    withContext(native) {
+                        handle.open(
+                            it.toIngestPixels(),
+                            it.width,
+                            it.height,
+                            openingDelta(raw = false),
+                        )
+                    }
+                }
+            }
+            if (opened == null) {
+                comparisonLoading = false
+                return@launch
+            }
+            val compareDelta = delta()
+                .put("overscan_active", false)
+                .put("date_imprint_active", false)
+            val frame = withContext(native) {
+                opened.setParams(compareDelta.toString())
+                val rendered = opened.render("live", true)
+                opened.close()
+                rendered
+            }
+            comparisonPreview = frame
+            comparisonLoading = false
+        }
+    }
+
+    fun releaseComparison() {
+        clearComparison()
+    }
+
+    private fun clearComparison() {
+        comparisonJob?.cancel()
+        comparisonJob = null
+        comparisonLoading = false
+        comparisonPreview = null
     }
 
     /** The frame's own name is what a real edge print carries. */
@@ -738,6 +812,10 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
     private fun delta(): JSONObject = JSONObject()
         .put("film_stock", filmId)
         .put("print_stock", paperId)
+        // Drags use the engine's own 800px interactive tier. The alternative
+        // was a display-side colour matrix, but exposure is shaped by the film
+        // and paper curves, not by a neutral brightness scale.
+        .put("preview_long_edge", if (isScrubbing) 800 else 1600)
         .put("exposure_compensation_ev", exposure.coerceIn(-2f, 2f).toDouble())
         .put("m_filter_shift", mFilter.coerceIn(-1f, 1f).toDouble())
         .put("y_filter_shift", yFilter.coerceIn(-1f, 1f).toDouble())
@@ -1032,6 +1110,7 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
         ticket.incrementAndGet()
         preview = null
         clearInspection()
+        clearComparison()
         runCatching { engine?.release() }
         engine = null
         ready = false
@@ -1059,6 +1138,7 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
     override fun onCleared() {
         renders.close()
         inspectionJob?.cancel()
+        comparisonJob?.cancel()
         session?.let { s -> s.close() }
         engine?.release()
     }
