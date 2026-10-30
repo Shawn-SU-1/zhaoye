@@ -23,6 +23,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -73,11 +74,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -88,6 +92,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
+import kotlin.math.pow
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -119,9 +124,9 @@ class MainActivity : ComponentActivity() {
                     BackHandler { settings = false }
                     SettingsScreen(onBack = { settings = false })
                 } else {
-                    DarkroomScreen(
+                    DarkroomScreenV2(
                         vm = vm,
-                        debugImage = intent?.getStringExtra("image"),
+                        debugImage = intent?.getStringExtra("image") ?: intent?.dataString,
                         onSettings = { settings = true },
                     )
                 }
@@ -136,17 +141,17 @@ class MainActivity : ComponentActivity() {
 // found a black band past the film's edge read as a defect (2026-10-04).
 // "auto" is a decision, not a gate: it takes the shape closest to the frame
 // so the picture is never trimmed to fit a hole it never had.
-private val FORMATS = listOf(
+internal val FORMATS = listOf(
     "auto" to "自动", "135" to "135", "135_half" to "135 半格",
     "120_645" to "645", "120_6x6" to "6×6", "120_6x7" to "6×7",
 )
-private val GATES = listOf(
+internal val GATES = listOf(
     "auto" to "自动", "square" to "方", "rounded" to "圆角",
     "eared" to "耳", "shouldered" to "肩", "kicked" to "翘角",
 )
-private val HOLES = listOf("white" to "白（扫描）", "black" to "黑（印相）")
-private val CARRIERS = listOf("none" to "无", "black" to "黑片夹", "open" to "亮片夹")
-private val CORNERS = listOf("br" to "右下", "bl" to "左下", "tr" to "右上", "tl" to "左上")
+internal val HOLES = listOf("white" to "白（扫描）", "black" to "黑（印相）")
+internal val CARRIERS = listOf("none" to "无", "black" to "黑片夹", "open" to "亮片夹")
+internal val CORNERS = listOf("br" to "右下", "bl" to "左下", "tr" to "右上", "tl" to "左上")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -239,11 +244,10 @@ private fun DarkroomScreen(
         ) {
             val bitmap = vm.preview
             if (bitmap != null) {
-                Image(
-                    bitmap = bitmap.asImageBitmap(),
-                    contentDescription = "冲印预览",
+                ZoomablePreview(
+                    bitmap = bitmap,
                     modifier = Modifier.fillMaxSize().padding(6.dp),
-                    contentScale = ContentScale.Fit,
+                    colorFilter = interactiveColorFilter(vm),
                 )
             } else {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -337,21 +341,31 @@ private fun DarkroomScreen(
 
             ParamSlider(
                 "曝光", vm.exposure, -2f..2f, String.format("%+.1f EV", vm.exposure),
-            ) { v -> vm.update { vm.exposure = v } }
+                onChange = { v -> vm.updateLive { vm.exposure = v } },
+                onFinished = vm::finishAdjustment,
+            )
             ParamSlider(
                 "M 滤色（洋红）", vm.mFilter, -1f..1f,
                 String.format("%+.0f CC", vm.mFilter * DarkroomViewModel.FILTER_CC),
-            ) { v -> vm.update { vm.mFilter = v } }
+                onChange = { v -> vm.updateLive { vm.mFilter = v } },
+                onFinished = vm::finishAdjustment,
+            )
             ParamSlider(
                 "Y 滤色（黄）", vm.yFilter, -1f..1f,
                 String.format("%+.0f CC", vm.yFilter * DarkroomViewModel.FILTER_CC),
-            ) { v -> vm.update { vm.yFilter = v } }
+                onChange = { v -> vm.updateLive { vm.yFilter = v } },
+                onFinished = vm::finishAdjustment,
+            )
             ParamSlider(
                 "颗粒", vm.grain, 0f..1f, String.format("%.2f", vm.grain),
-            ) { v -> vm.update { vm.grain = v } }
+                onChange = { v -> vm.updateLive { vm.grain = v } },
+                onFinished = vm::finishAdjustment,
+            )
             ParamSlider(
                 "光晕", vm.halation, 0f..1f, String.format("%.2f", vm.halation),
-            ) { v -> vm.update { vm.halation = v } }
+                onChange = { v -> vm.updateLive { vm.halation = v } },
+                onFinished = vm::finishAdjustment,
+            )
 
             if (vm.overscanOn) {
               Column(Modifier.onGloballyPositioned { edgeTop = it.positionInWindow().y }) {
@@ -372,7 +386,9 @@ private fun DarkroomScreen(
                 ) { vm.update { vm.edgeText = it } }
                 ParamSlider(
                     "边缘雾", vm.fog, 0f..2f, String.format("%.2f", vm.fog),
-                ) { v -> vm.update { vm.fog = v } }
+                    onChange = { v -> vm.updateLive { vm.fog = v } },
+                    onFinished = vm::finishAdjustment,
+                )
               }
             }
 
@@ -430,25 +446,67 @@ private fun DarkroomScreen(
 private enum class Picking { Film, Paper }
 
 /**
+ * A display-only approximation while a finger is down. The engine still owns
+ * the authoritative preview; this filter only removes the wait from the first
+ * visible movement.
+ */
+internal fun interactiveColorFilter(vm: DarkroomViewModel): ColorFilter? {
+    if (!vm.isScrubbing) return null
+    val exposure = vm.exposure - vm.renderedExposure
+    val magenta = vm.mFilter - vm.renderedMFilter
+    val yellow = vm.yFilter - vm.renderedYFilter
+    if (kotlin.math.abs(exposure) < 0.01f &&
+        kotlin.math.abs(magenta) < 0.005f &&
+        kotlin.math.abs(yellow) < 0.005f
+    ) {
+        return null
+    }
+    // Scaling sRGB channels clips highlights unevenly and can turn a warm
+    // photograph magenta. Mix toward white for positive exposure and toward
+    // black for negative exposure instead; the small M/Y terms then tint that
+    // neutral approximation without dominating it.
+    val whiteMix = (exposure * 0.20f).coerceIn(0f, 0.55f)
+    val neutralGain = if (exposure >= 0f) {
+        1f - whiteMix
+    } else {
+        2.0.pow(exposure.toDouble()).toFloat().coerceIn(0.35f, 1f)
+    }
+    val whiteOffset = 255f * whiteMix
+    val red = (neutralGain * (1f + 0.035f * magenta + 0.018f * yellow)).coerceIn(0f, 2f)
+    val green = (neutralGain * (1f - 0.026f * magenta + 0.018f * yellow)).coerceIn(0f, 2f)
+    val blue = (neutralGain * (1f + 0.035f * magenta - 0.034f * yellow)).coerceIn(0f, 2f)
+    return ColorFilter.colorMatrix(
+        ColorMatrix(
+            floatArrayOf(
+                red, 0f, 0f, 0f, whiteOffset,
+                0f, green, 0f, 0f, whiteOffset,
+                0f, 0f, blue, 0f, whiteOffset,
+                0f, 0f, 0f, 1f, 0f,
+            ),
+        ),
+    )
+}
+
+/**
  * ACTION_PICK on the media store: opens whichever gallery the phone actually
  * ships, with or without Google Play services.
  *
  * StartActivityForResult is final in activity 1.8.0 and cannot be subclassed,
  * so the intent is built by the caller and this only has to hand the Uri back.
  */
-private class PickFromGallery : ActivityResultContract<Intent, Uri?>() {
+internal class PickFromGallery : ActivityResultContract<Intent, Uri?>() {
     override fun createIntent(context: Context, input: Intent): Intent = input
 
     override fun parseResult(resultCode: Int, intent: Intent?): Uri? =
         if (resultCode == Activity.RESULT_OK) intent?.data else null
 }
 
-private fun galleryIntent(): Intent =
+internal fun galleryIntent(): Intent =
     Intent(Intent.ACTION_PICK)
         .setDataAndType(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "image/*")
 
 /** The document browser, opened on the pictures root rather than "Recent". */
-private class OpenRawFile : ActivityResultContracts.OpenDocument() {
+internal class OpenRawFile : ActivityResultContracts.OpenDocument() {
     override fun createIntent(context: Context, input: Array<String>): Intent =
         super.createIntent(context, input).putExtra(
             DocumentsContract.EXTRA_INITIAL_URI,
@@ -523,7 +581,7 @@ private fun Header(
 }
 
 @Composable
-private fun StockRow(vm: DarkroomViewModel, onFilm: () -> Unit, onPaper: () -> Unit) {
+internal fun StockRow(vm: DarkroomViewModel, onFilm: () -> Unit, onPaper: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -535,7 +593,7 @@ private fun StockRow(vm: DarkroomViewModel, onFilm: () -> Unit, onPaper: () -> U
 }
 
 @Composable
-private fun EdgeRow(vm: DarkroomViewModel) {
+internal fun EdgeRow(vm: DarkroomViewModel) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -580,7 +638,7 @@ private fun ToggleChip(label: String, value: String, on: Boolean, modifier: Modi
 
 /** A one-of-N row that scrolls sideways, for values a slider cannot hold. */
 @Composable
-private fun ChoiceRow(label: String, options: List<Pair<String, String>>, selected: String, onPick: (String) -> Unit) {
+internal fun ChoiceRow(label: String, options: List<Pair<String, String>>, selected: String, onPick: (String) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
         Text(label, color = Faint, fontSize = 11.sp)
         Row(
@@ -623,7 +681,7 @@ private fun StockChip(label: String, value: String, modifier: Modifier, onClick:
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun StockSheet(
+internal fun StockSheet(
     title: String,
     items: List<Pair<String, String>>,
     selected: String,
@@ -674,28 +732,45 @@ private fun StockSheet(
 }
 
 @Composable
-private fun ParamSlider(
+internal fun ParamSlider(
     label: String,
     value: Float,
     range: ClosedFloatingPointRange<Float>,
     reading: String,
     onChange: (Float) -> Unit,
+    onFinished: () -> Unit = {},
+    resetValue: Float? = null,
 ) {
     Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(label, color = Faint, fontSize = 11.sp, modifier = Modifier.weight(1f))
-            Text(reading, color = Amber, fontSize = 11.sp)
+            Text(
+                reading,
+                color = Amber,
+                fontSize = 11.sp,
+                modifier = Modifier.pointerInput(resetValue) {
+                    if (resetValue != null) {
+                        detectTapGestures(
+                            onDoubleTap = {
+                                onChange(resetValue)
+                                onFinished()
+                            },
+                        )
+                    }
+                },
+            )
         }
         Slider(
             value = value,
             onValueChange = onChange,
+            onValueChangeFinished = onFinished,
             valueRange = range,
             colors = SliderDefaults.colors(
                 thumbColor = Amber,
                 activeTrackColor = Amber,
                 inactiveTrackColor = Color(0xFF332C25),
             ),
-            modifier = Modifier.fillMaxWidth().height(28.dp),
+            modifier = Modifier.fillMaxWidth().height(48.dp),
         )
     }
 }
@@ -708,7 +783,7 @@ private fun ParamSlider(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DateRow(
+internal fun DateRow(
     dateText: String,
     fromPhoto: Boolean,
     millis: Long,

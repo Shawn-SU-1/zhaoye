@@ -21,8 +21,8 @@ android {
         applicationId = "com.shawn.zhaoye"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.1.1"
+        versionCode = 3
+        versionName = "0.2.0-dev"
         ndk { abiFilters += "arm64-v8a" }
     }
 
@@ -71,4 +71,5 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.extended)
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+    implementation("net.engawapg.lib:zoomable:2.9.0")
 }

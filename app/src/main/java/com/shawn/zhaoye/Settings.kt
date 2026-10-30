@@ -69,6 +69,7 @@ private val LIBS = listOf(
     "stb_truetype" to "字形轮廓 · public domain",
     "DroidSans" to "片边字样 · Apache-2.0",
     "Vulkan / volk" to "计算后端 · Apache-2.0 / MIT",
+    "Zoomable" to "预览双指缩放与平移 · Apache-2.0",
 )
 
 @Composable

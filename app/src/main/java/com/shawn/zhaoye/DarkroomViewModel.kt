@@ -110,7 +110,15 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
     private val native = Dispatchers.Default.limitedParallelism(1)
     private var engine: EngineHandle? = null
     private var session: Session? = null
-    private var pending: Job? = null
+    private data class RenderRequest(
+        val id: Int,
+        val full: Boolean,
+        val debounceMs: Long,
+        val settlesScrub: Boolean,
+    )
+    private val renders = RenderCoordinator<RenderRequest>(viewModelScope) { request ->
+        renderLatest(request)
+    }
     /**
      * A line that survives the reopen that follows a recovery: rebuilding the
      * engine reopens the frame, and every step of that overwrites the status,
@@ -120,6 +128,7 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
     private var postOpenNotice: String? = null
     private val ticket = AtomicInteger(0)
     private var pendingFile: java.io.File? = null
+    private var inspectionJob: Job? = null
 
     // What the current negative was made from, so export can go back to the
     // full-size frame. A launch intent hands over a path rather than a Uri, so
@@ -130,6 +139,24 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
     private var lastShootMillis: Long? = null
 
     var preview by mutableStateOf<Bitmap?>(null)
+    /**
+     * The preview-sized input frame, retained for before/after comparison.
+     * RAW has no Bitmap-side decode yet, so this stays null for RAW inputs.
+     */
+    var originalPreview by mutableStateOf<Bitmap?>(null)
+        private set
+    var inspectionPreview by mutableStateOf<Bitmap?>(null)
+        private set
+    var inspectionLoading by mutableStateOf(false)
+        private set
+    var isScrubbing by mutableStateOf(false)
+        private set
+    var renderedExposure by mutableStateOf(0f)
+        private set
+    var renderedMFilter by mutableStateOf(0f)
+        private set
+    var renderedYFilter by mutableStateOf(0f)
+        private set
     var ready by mutableStateOf(false)
     var status by mutableStateOf("正在装载暗房…")
     /** Drives the status line's colour: a failure must not look like a no-op. */
@@ -320,7 +347,10 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
             }
             session?.let { s -> withContext(native) { s.close() } }
             session = null
+            ticket.incrementAndGet()
             preview = null
+            originalPreview = null
+            clearInspection()
             readNote = ""
             val opened = openSession(handle, file, 1600, remember = true)
             if (opened == null) {
@@ -410,6 +440,7 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
         val bitmap = withContext(Dispatchers.IO) { decodeFile(file, longEdge) } ?: return null
         frameW = bitmap.width
         frameH = bitmap.height
+        if (remember) originalPreview = bitmap
         return withContext(native) {
             val opened =
                 handle.open(bitmap.toIngestPixels(), bitmap.width, bitmap.height, openingDelta(raw = false))
@@ -477,7 +508,10 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
             }
             session?.let { s -> withContext(native) { s.close() } }
             session = null
+            ticket.incrementAndGet()
             preview = null
+            originalPreview = null
+            clearInspection()
             var failure = ""
             val created = withContext(native) {
                 val opened = bitmap?.let { frame ->
@@ -499,6 +533,7 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
                 return@launch
             }
             session = created
+            originalPreview = bitmap
             say("已上胶卷")
             render(full = true)
         }
@@ -521,9 +556,92 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun update(block: () -> Unit) {
+        clearInspection()
         block()
         persist()
-        render(full = false)
+        render(full = false, debounceMs = 70)
+    }
+
+    /** Slider movement: update the cheap proxy now and conflate native work. */
+    fun updateLive(block: () -> Unit) {
+        clearInspection()
+        block()
+        isScrubbing = true
+        render(full = false, debounceMs = 90)
+    }
+
+    fun resetLook() {
+        update {
+            exposure = 0f
+            mFilter = 0f
+            yFilter = 0f
+            grain = 0.35f
+            halation = 0.45f
+        }
+    }
+
+    /** The finger is up: persist once and ask for the best preview. */
+    fun finishAdjustment() {
+        isScrubbing = false
+        persist()
+        render(full = false, debounceMs = 0, settlesScrub = true)
+    }
+
+    /**
+     * A paused zoom asks for a real 3400px print. This runs in its own session,
+     * so the normal 1600px preview disappears only when the detail frame is
+     * ready and the current pinch position can be kept.
+     */
+    fun requestInspection() {
+        if (inspectionPreview != null || inspectionLoading || !hasFrame) return
+        val file = lastFile
+        val uri = lastUri
+        if (file == null && uri == null) return
+        val handle = engine ?: return
+        inspectionJob?.cancel()
+        inspectionJob = viewModelScope.launch {
+            inspectionLoading = true
+            val opened = if (file != null) {
+                openSession(handle, file, 3400, remember = false)
+            } else {
+                val frame = withContext(Dispatchers.IO) { decode(getApplication(), uri!!, 3400) }
+                frame?.let {
+                    frameW = it.width
+                    frameH = it.height
+                    withContext(native) {
+                        handle.open(
+                            it.toIngestPixels(),
+                            it.width,
+                            it.height,
+                            openingDelta(raw = false),
+                        )
+                    }
+                }
+            }
+            if (opened == null) {
+                inspectionLoading = false
+                return@launch
+            }
+            val detail = withContext(native) {
+                opened.setParams(delta().toString())
+                val frame = opened.render("preview", true)
+                opened.close()
+                frame
+            }
+            if (inspectionLoading) inspectionPreview = detail
+            inspectionLoading = false
+        }
+    }
+
+    fun releaseInspection() {
+        clearInspection()
+    }
+
+    private fun clearInspection() {
+        inspectionJob?.cancel()
+        inspectionJob = null
+        inspectionLoading = false
+        inspectionPreview = null
     }
 
     /** The frame's own name is what a real edge print carries. */
@@ -706,75 +824,70 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
 
     private class Applied(val error: String?, val needsFull: Boolean)
 
-    fun render(full: Boolean) {
+    fun render(full: Boolean, debounceMs: Long = 160, settlesScrub: Boolean = false) {
+        if (session == null) return
+        renders.submit(RenderRequest(ticket.incrementAndGet(), full, debounceMs, settlesScrub))
+    }
+
+    private suspend fun renderLatest(request: RenderRequest) {
+        if (request.debounceMs > 0) kotlinx.coroutines.delay(request.debounceMs)
+        if (request.id != ticket.get()) return
         val current = session ?: return
-        val myTicket = ticket.incrementAndGet()
-        pending?.cancel()
-        pending = viewModelScope.launch {
-            // A drag emits dozens of values; the last one wins.
-            kotlinx.coroutines.delay(160)
-            busy = true
-            val applied = withContext(native) {
-                val reply = current.setParams(delta().toString())
-                val root = runCatching { JSONTokener(reply).nextValue() }.getOrNull() as? JSONObject
-                val error = root?.optString("error")?.takeIf { it.isNotEmpty() }
-                // `invalidated` is the string "shoot" or "print": shoot means
-                // the negative itself is stale, print means a reprint from the
-                // cached negative is enough. Anything else -- a missing field,
-                // an error reply -- must fall back to the expensive path.
-                val invalidated = root?.optString("invalidated").orEmpty()
-                Applied(error, full || invalidated != "print")
-            }
-            if (myTicket != ticket.get()) return@launch   // a newer edit already won
-            if (applied.error != null) {
-                // Silently swallowing this is what made a rejected delta look
-                // like a slider that does nothing.
-                say("参数被退回：${applied.error}", error = true)
-                busy = false
-                return@launch
-            }
-            val started = System.currentTimeMillis()
-            var failure = ""
-            val bitmap = withContext(native) {
-                val rendered = current.render("live", applied.needsFull)
-                if (rendered == null) failure = engine?.lastError.orEmpty()
-                rendered
-            }
-            Diag.log(
-                "R",
-                "live ${if (applied.needsFull) "full" else "reprint"} " +
-                    "${System.currentTimeMillis() - started} ms -> " +
-                    (bitmap?.let { "${it.width}x${it.height}" } ?: "null"),
-            )
-            if (myTicket != ticket.get()) return@launch   // a newer edit already won
-            if (bitmap != null) {
-                preview = bitmap
-                val notice = postOpenNotice
-                if (notice != null) {
-                    postOpenNotice = null
-                    say(notice, error = true)
-                } else {
-                    // The film and paper already sit on the frame as a caption,
-                    // so this line reports the print itself: how big it came out
-                    // and how long it took, plus the gate crop when there is one.
-                    val ms = System.currentTimeMillis() - started
-                    say("冲印完成 · ${bitmap.width}×${bitmap.height} · ${ms} ms$fitNote")
-                }
-            } else if (failure.contains("gate's shape") && filmFormat != "auto") {
-                // The engine will only lay film on a frame that already has the
-                // gate's shape. Falling back to 自动 is better than a dead
-                // canvas: auto picks the closest gate and crops the last few
-                // percent itself.
-                filmFormat = "auto"
-                persist()
-                say("这个画幅装不下这张照片的形状，已切回「画幅 自动」")
-                render(full = true)
-                return@launch
-            } else {
-                say("渲染失败：${failure.ifEmpty { "引擎没有给出原因" }}", error = true)
-            }
-            busy = false
+        busy = true
+        val applied = withContext(native) {
+            val reply = current.setParams(delta().toString())
+            val root = runCatching { JSONTokener(reply).nextValue() }.getOrNull() as? JSONObject
+            val error = root?.optString("error")?.takeIf { it.isNotEmpty() }
+            // `invalidated` is the string "shoot" or "print". Anything else,
+            // including an error reply, must fall back to the expensive path.
+            val invalidated = root?.optString("invalidated").orEmpty()
+            Applied(error, request.full || invalidated != "print")
         }
+        if (request.id != ticket.get()) return
+        if (applied.error != null) {
+            say("参数被退回：${applied.error}", error = true)
+            busy = false
+            return
+        }
+        val started = System.currentTimeMillis()
+        var failure = ""
+        val bitmap = withContext(native) {
+            val rendered = current.render("live", applied.needsFull)
+            if (rendered == null) failure = engine?.lastError.orEmpty()
+            rendered
+        }
+        Diag.log(
+            "R",
+            "live ${if (applied.needsFull) "full" else "reprint"} " +
+                "${System.currentTimeMillis() - started} ms -> " +
+                (bitmap?.let { "${it.width}x${it.height}" } ?: "null"),
+        )
+        if (request.id != ticket.get()) return
+        if (bitmap != null) {
+            preview = bitmap
+            renderedExposure = exposure
+            renderedMFilter = mFilter
+            renderedYFilter = yFilter
+            if (request.settlesScrub) isScrubbing = false
+            val notice = postOpenNotice
+            if (notice != null) {
+                postOpenNotice = null
+                say(notice, error = true)
+            } else {
+                val ms = System.currentTimeMillis() - started
+                Diag.log("R", "published ${bitmap.width}x${bitmap.height} in $ms ms")
+                say("冲印完成$fitNote")
+            }
+        } else if (failure.contains("gate's shape") && filmFormat != "auto") {
+            filmFormat = "auto"
+            persist()
+            say("这个画幅装不下这张照片的形状，已切回「画幅 自动」")
+            render(full = true)
+            return
+        } else {
+            say("渲染失败：${failure.ifEmpty { "引擎没有给出原因" }}", error = true)
+        }
+        busy = false
     }
 
     /**
@@ -911,13 +1024,14 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
      * keep the user out of "restart the app and try again".
      */
     private suspend fun recoverEngine(notice: String? = null) {
-        pending?.cancel()
         exportLongEdge = 3200
         persist()
         postOpenNotice = notice
         runCatching { session?.let { s -> withContext(native) { s.close() } } }
         session = null
+        ticket.incrementAndGet()
         preview = null
+        clearInspection()
         runCatching { engine?.release() }
         engine = null
         ready = false
@@ -943,7 +1057,8 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     override fun onCleared() {
-        pending?.cancel()
+        renders.close()
+        inspectionJob?.cancel()
         session?.let { s -> s.close() }
         engine?.release()
     }
