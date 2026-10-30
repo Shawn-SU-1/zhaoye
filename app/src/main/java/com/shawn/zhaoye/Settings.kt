@@ -255,11 +255,20 @@ fun SettingsScreen(vm: DarkroomViewModel = viewModel(), onBack: () -> Unit) {
 
         Divider()
 
-        Section("导出")
+        Section("导出尺寸")
+        KeyValue(
+            "当前选择",
+            when (vm.exportLongEdge) {
+                0 -> "片源原尺寸（仅 RAW）"
+                3200 -> "3200（稳定）"
+                else -> vm.exportLongEdge.toString()
+            },
+        )
         Body(
-            "导出长边决定成片的分辨率，每一档的像素量约为：3200 → 7 MP，4800 → 15 MP，" +
+            "这里只决定下一次保存或分享的尺寸，不会立即重绘当前预览。" +
+                "每一档的像素量约为：3200 → 7 MP，4800 → 15 MP，" +
                 "6400 → 27 MP，原图（A7R3 的 7968）→ 42 MP。“原图长边”是引擎真的按片源尺寸冲印，" +
-                "不是放大，成片的每一颗像素都是跑完整条管线算出来的。",
+                "不是放大；JPEG 选择原图时仍会自动按 3200 导出。",
         )
         Body(
             "代价是内存：一条管线同时活几张全尺寸浮点图，42 MP 一张就是 485 MB，" +
@@ -275,7 +284,7 @@ fun SettingsScreen(vm: DarkroomViewModel = viewModel(), onBack: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Chip("6400", vm.exportLongEdge == 6400, Modifier.weight(1f)) { vm.chooseExportLongEdge(6400) }
-            Chip("原图长边", vm.exportLongEdge == 0, Modifier.weight(1f)) { vm.chooseExportLongEdge(0) }
+            Chip("片源原尺寸", vm.exportLongEdge == 0, Modifier.weight(1f)) { vm.chooseExportLongEdge(0) }
         }
 
         Divider()

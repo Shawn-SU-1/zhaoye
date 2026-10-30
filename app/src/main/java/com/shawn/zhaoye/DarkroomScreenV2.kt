@@ -85,6 +85,7 @@ fun DarkroomScreenV2(
     var compareProgress by rememberSaveable { mutableStateOf(0.5f) }
     var zoomScale by remember { mutableStateOf(1f) }
     var group by rememberSaveable { mutableStateOf(0) }
+    var exportTarget by remember { mutableStateOf<ExportTarget?>(null) }
 
     LaunchedEffect(zoomScale, vm.preview) {
         if (zoomScale > 1.5f && !comparing) {
@@ -285,9 +286,21 @@ fun DarkroomScreenV2(
             comparing = comparing,
             onOpen = openGallery,
             onOriginal = { comparing = !comparing },
-            onSave = { vm.export(ExportTarget.Gallery) },
-            onShare = { vm.export(ExportTarget.Share) },
+            onSave = { exportTarget = ExportTarget.Gallery },
+            onShare = { exportTarget = ExportTarget.Share },
             onSettings = onSettings,
+        )
+    }
+
+    exportTarget?.let { target ->
+        ExportOptionsSheet(
+            vm = vm,
+            initialTarget = target,
+            onExport = {
+                exportTarget = null
+                vm.export(it)
+            },
+            onDismiss = { exportTarget = null },
         )
     }
 
@@ -810,8 +823,14 @@ private fun GroupTitle(text: String) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ExportSheetV2(onExport: (ExportTarget) -> Unit, onDismiss: () -> Unit) {
+private fun ExportOptionsSheet(
+    vm: DarkroomViewModel,
+    initialTarget: ExportTarget,
+    onExport: (ExportTarget) -> Unit,
+    onDismiss: () -> Unit,
+) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var target by remember { mutableStateOf(initialTarget) }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = state,
@@ -819,18 +838,107 @@ private fun ExportSheetV2(onExport: (ExportTarget) -> Unit, onDismiss: () -> Uni
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
             Text("导出成片", color = Bone, fontSize = 16.sp, fontWeight = FontWeight.Medium)
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "尺寸会立即用于本次导出，但不会重绘当前预览。",
+                color = Faint,
+                fontSize = 10.sp,
+            )
+            Spacer(Modifier.height(14.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ExportTargetChip(
+                    "保存到相册",
+                    target == ExportTarget.Gallery,
+                    Modifier.weight(1f),
+                ) { target = ExportTarget.Gallery }
+                ExportTargetChip(
+                    "系统分享",
+                    target == ExportTarget.Share,
+                    Modifier.weight(1f),
+                ) { target = ExportTarget.Share }
+            }
+            Spacer(Modifier.height(16.dp))
+            Text("导出长边", color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+            Spacer(Modifier.height(7.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ExportSizeChip("3200", vm.exportLongEdge == 3200, Modifier.weight(1f)) {
+                    vm.chooseExportLongEdge(3200)
+                }
+                ExportSizeChip("4800", vm.exportLongEdge == 4800, Modifier.weight(1f)) {
+                    vm.chooseExportLongEdge(4800)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ExportSizeChip("6400", vm.exportLongEdge == 6400, Modifier.weight(1f)) {
+                    vm.chooseExportLongEdge(6400)
+                }
+                ExportSizeChip("片源原尺寸", vm.exportLongEdge == 0, Modifier.weight(1f)) {
+                    vm.chooseExportLongEdge(0)
+                }
+            }
+            if (vm.exportLongEdge == 0) {
+                Text(
+                    "JPEG 会自动使用 3200；只有 RAW 能按片源原尺寸导出。",
+                    color = Faint,
+                    fontSize = 10.sp,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+            Spacer(Modifier.height(18.dp))
             Button(
-                onClick = { onExport(ExportTarget.Gallery) },
+                onClick = { onExport(target) },
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = Amber, contentColor = Ink),
-            ) { Text("保存到相册") }
-            Spacer(Modifier.height(8.dp))
-            TextButton(
-                onClick = { onExport(ExportTarget.Share) },
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("系统分享", color = Bone) }
+            ) {
+                Text(if (target == ExportTarget.Gallery) "保存到相册" else "打开系统分享")
+            }
             Spacer(Modifier.height(24.dp))
         }
     }
+}
+
+@Composable
+private fun ExportTargetChip(
+    label: String,
+    selected: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    Text(
+        label,
+        color = if (selected) Ink else Bone,
+        fontSize = 12.sp,
+        modifier = modifier
+            .clip(RoundedCornerShape(9.dp))
+            .background(if (selected) Amber else Color(0xFF2A241E))
+            .clickable { onClick() }
+            .padding(vertical = 10.dp),
+        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+    )
+}
+
+@Composable
+private fun ExportSizeChip(
+    label: String,
+    selected: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    Text(
+        label,
+        color = if (selected) Amber else Bone,
+        fontSize = 11.sp,
+        modifier = modifier
+            .clip(RoundedCornerShape(9.dp))
+            .background(if (selected) Color(0xFF30251A) else Color(0xFF211D19))
+            .border(
+                1.dp,
+                if (selected) Amber else Color(0xFF332C25),
+                RoundedCornerShape(9.dp),
+            )
+            .clickable { onClick() }
+            .padding(vertical = 10.dp),
+        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+    )
 }
