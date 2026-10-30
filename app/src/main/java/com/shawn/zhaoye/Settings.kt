@@ -255,17 +255,20 @@ fun SettingsScreen(vm: DarkroomViewModel = viewModel(), onBack: () -> Unit) {
 
         Divider()
 
-        Section("导出尺寸")
+        Section("成片尺寸")
         KeyValue(
-            "当前选择",
+            "默认成片尺寸",
             when (vm.exportLongEdge) {
                 0 -> "片源原尺寸（仅 RAW）"
-                3200 -> "3200（稳定）"
+                3200 -> "标准 3200"
+                4800 -> "高清 4800"
+                6400 -> "大图 6400"
                 else -> vm.exportLongEdge.toString()
             },
         )
         Body(
-            "这里只决定下一次保存或分享的尺寸，不会立即重绘当前预览。" +
+            "按成片较长的一边计算；数值越大，细节越多，文件也越大。" +
+                "这里只决定下一次保存或分享的尺寸，不会立即重绘当前预览。" +
                 "每一档的像素量约为：3200 → 7 MP，4800 → 15 MP，" +
                 "6400 → 27 MP，原图（A7R3 的 7968）→ 42 MP。“原图长边”是引擎真的按片源尺寸冲印，" +
                 "不是放大；JPEG 选择原图时仍会自动按 3200 导出。",
@@ -276,14 +279,14 @@ fun SettingsScreen(vm: DarkroomViewModel = viewModel(), onBack: () -> Unit) {
                 "掉线后 App 会自动重建引擎、把这一项退回 3200，换小的再试即可。",
         )
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Chip("3200（稳）", vm.exportLongEdge == 3200, Modifier.weight(1f)) { vm.chooseExportLongEdge(3200) }
-            Chip("4800", vm.exportLongEdge == 4800, Modifier.weight(1f)) { vm.chooseExportLongEdge(4800) }
+            Chip("标准 3200", vm.exportLongEdge == 3200, Modifier.weight(1f)) { vm.chooseExportLongEdge(3200) }
+            Chip("高清 4800", vm.exportLongEdge == 4800, Modifier.weight(1f)) { vm.chooseExportLongEdge(4800) }
         }
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Chip("6400", vm.exportLongEdge == 6400, Modifier.weight(1f)) { vm.chooseExportLongEdge(6400) }
+            Chip("大图 6400", vm.exportLongEdge == 6400, Modifier.weight(1f)) { vm.chooseExportLongEdge(6400) }
             Chip("片源原尺寸", vm.exportLongEdge == 0, Modifier.weight(1f)) { vm.chooseExportLongEdge(0) }
         }
 

@@ -858,19 +858,25 @@ private fun ExportOptionsSheet(
                 ) { target = ExportTarget.Share }
             }
             Spacer(Modifier.height(16.dp))
-            Text("导出长边", color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+            Text("成片尺寸", color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+            Text(
+                "按成片较长的一边计算；数值越大，细节越多，文件也越大。",
+                color = Faint,
+                fontSize = 10.sp,
+                modifier = Modifier.padding(top = 3.dp),
+            )
             Spacer(Modifier.height(7.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ExportSizeChip("3200", vm.exportLongEdge == 3200, Modifier.weight(1f)) {
+                ExportSizeChip("标准 3200", vm.exportLongEdge == 3200, Modifier.weight(1f)) {
                     vm.chooseExportLongEdge(3200)
                 }
-                ExportSizeChip("4800", vm.exportLongEdge == 4800, Modifier.weight(1f)) {
+                ExportSizeChip("高清 4800", vm.exportLongEdge == 4800, Modifier.weight(1f)) {
                     vm.chooseExportLongEdge(4800)
                 }
             }
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ExportSizeChip("6400", vm.exportLongEdge == 6400, Modifier.weight(1f)) {
+                ExportSizeChip("大图 6400", vm.exportLongEdge == 6400, Modifier.weight(1f)) {
                     vm.chooseExportLongEdge(6400)
                 }
                 ExportSizeChip("片源原尺寸", vm.exportLongEdge == 0, Modifier.weight(1f)) {
