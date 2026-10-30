@@ -5,12 +5,19 @@
 [![engine](https://img.shields.io/badge/engine-Vulkan%20compute-444)](https://github.com/Shawn-SU-1/zhaoye#它借用了什么)
 [![license](https://img.shields.io/badge/license-GPL--3.0--or--later-444)](https://github.com/Shawn-SU-1/zhaoye/blob/main/LICENSE)
 
+> **下载照夜 0.2.0**
+>
+> [GitHub 正式版](https://github.com/Shawn-SU-1/zhaoye/releases/latest) ·
+> [蓝奏云国内快速下载](https://wwbjy.lanzouv.com/i3EI64e0cfvc)
+>
+> Android 8.0 以上、支持 Vulkan 1.1 的 arm64 真机。GitHub Release 是正式 `0.2.0` 发布包；
+> 蓝奏云页面文件名可能仍是 `0.2.0-dev`，升级前请以 App 设置页显示的版本和 APK 校验值为准。
+
 安卓暗房：同一份 C++20 光谱冲印引擎，用 Vulkan compute 在手机上跑，
 不是对着效果重画一遍滤镜。
 
-**下载**：[照夜 0.1.1 · arm64-v8a APK](https://github.com/Shawn-SU-1/zhaoye/releases/latest)（29.9 MB）
-——Android 8.0 以上、支持 Vulkan 1.1 的 arm64 真机。装不上或出问题，先看[装上](#装上)
-和[出问题了](#出问题了)；打算修什么、不做什么，见 [ROADMAP.md](ROADMAP.md)。
+装不上或出问题，先看[装上](#装上)和[出问题了](#出问题了)；打算修什么、不做什么，
+见 [ROADMAP.md](ROADMAP.md)。
 
 > **照夜**，取自唐玄宗的名马「照夜白」——一身白毛，黑夜里也照得见。
 > 韩幹为它画过像，那张《照夜白图》今天还在大都会博物馆。
@@ -19,6 +26,15 @@
 
 包名 `com.shawn.zhaoye`。引擎库仍叫 `libspektralab.so`：它是上游 SpektraLab 的
 安卓移植，这个名字就是它的出处。
+
+## 0.2 的工作流
+
+- 单屏暗房：照片、四组参数和底部导航同时可见。
+- 光影、质感、胶片、片边四个调参单元，滑动后保留最新一次参数。
+- 双指缩放、双击放大；停顿后加载 3400px 细节帧，检查颗粒和片边字。
+- 原图/成片分割对比；片边开启时自动使用无片边对比成片，保证画面对齐。
+- 设置页内置照夜专用跑分，根据真实 800px 冲印、片边、重印和 1600px 收尾耗时建议是否开启实时预览。
+- 保存和分享前可直接选择成片尺寸。
 
 ```
 场景光 → 胶片曝光 → 显影（染料密度）→ 放大机 → 相纸 → 显影 → 扫描 → sRGB
@@ -125,13 +141,14 @@ x86 模拟器跑不了，真机需要 Vulkan 1.1 以上。
 ### 直接装
 
 到 [Releases](https://github.com/Shawn-SU-1/zhaoye/releases/latest) 取
-`Zhaoye-0.1.1-arm64-v8a.apk`（29.9 MB），在手机上打开安装。这是侧载，系统会问一次
+`Zhaoye-0.2.0-arm64-v8a.apk`（30.1 MB），在手机上打开安装。国内网络也可使用
+[蓝奏云快速下载](https://wwbjy.lanzouv.com/i3EI64e0cfvc)。这是侧载，系统会问一次
 要不要允许安装未知来源应用。签名是 RSA-4096 的发布密钥，证书 SHA-256
 `c4b5c76576838005bf90de0a55331341d9b3132e0ace0077a581385f3b43ca65`；apk 自身的校验值：
 
 ```bash
-sha256sum Zhaoye-0.1.1-arm64-v8a.apk
-# 4d526efc6ada9413c4dc01677eb1474d3080152cfe215b316b659f4540894056
+sha256sum Zhaoye-0.2.0-arm64-v8a.apk
+# e2a2ea97f0063ef07f5be0e9390bdc30a55e62e97f7aff3b73d34351f6768a74
 ```
 
 以前在本地装过 debug 版的，**先卸载再装**：签名不同，覆盖安装会被系统拒绝。
