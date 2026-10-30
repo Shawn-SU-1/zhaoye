@@ -5,6 +5,8 @@
 [![engine](https://img.shields.io/badge/engine-Vulkan%20compute-444)](https://github.com/Shawn-SU-1/zhaoye#它借用了什么)
 [![license](https://img.shields.io/badge/license-GPL--3.0--or--later-444)](https://github.com/Shawn-SU-1/zhaoye/blob/main/LICENSE)
 
+**简体中文** · [日本語](README.ja.md) · [English](README.en.md)
+
 > **下载照夜 0.2.0**
 >
 > [GitHub 正式版](https://github.com/Shawn-SU-1/zhaoye/releases/latest) ·
