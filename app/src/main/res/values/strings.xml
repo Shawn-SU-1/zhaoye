@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">照夜</string>
+    <string name="app_author">夢島千尋（Shawn）</string>
+    <string name="app_project_url">https://github.com/Shawn-SU-1/zhaoye</string>
+    <string name="app_license">GPL-3.0-or-later</string>
 </resources>

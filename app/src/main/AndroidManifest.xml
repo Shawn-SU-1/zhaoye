@@ -16,6 +16,16 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Zhaoye">
 
+        <meta-data
+            android:name="com.shawn.zhaoye.author"
+            android:value="@string/app_author" />
+        <meta-data
+            android:name="com.shawn.zhaoye.project_url"
+            android:value="@string/app_project_url" />
+        <meta-data
+            android:name="com.shawn.zhaoye.license"
+            android:value="@string/app_license" />
+
         <!-- The diagnostics report leaves through a chooser as a content://
              URI, which is the only way a share target can read cacheDir. -->
         <provider
