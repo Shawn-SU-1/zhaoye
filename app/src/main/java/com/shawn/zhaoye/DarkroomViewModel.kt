@@ -20,7 +20,9 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import org.json.JSONTokener
 import java.io.File
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.math.roundToInt
 
 /** Where a finished print goes: the gallery, or straight out to another app. */
 enum class ExportTarget { Gallery, Share }
@@ -35,6 +37,7 @@ enum class ExportTarget { Gallery, Share }
 class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
 
     companion object {
+        private const val BENCHMARK_VERSION = 4
         /**
          * The CC one unit of `m_filter_shift` / `y_filter_shift` is worth. The
          * engine keeps the reference's -1..1 shift in units of
@@ -130,6 +133,7 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
     private var pendingFile: java.io.File? = null
     private var inspectionJob: Job? = null
     private var comparisonJob: Job? = null
+    private var benchmarkJob: Job? = null
 
     // What the current negative was made from, so export can go back to the
     // full-size frame. A launch intent hands over a path rather than a Uri, so
@@ -153,6 +157,24 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
     var comparisonPreview by mutableStateOf<Bitmap?>(null)
         private set
     var comparisonLoading by mutableStateOf(false)
+        private set
+    var realtimePreviewEnabled by mutableStateOf(true)
+        private set
+    var benchmarkRunning by mutableStateOf(false)
+        private set
+    var benchmarkScore by mutableStateOf<Int?>(null)
+        private set
+    var benchmarkFullMs by mutableStateOf<Int?>(null)
+        private set
+    var benchmarkReprintMs by mutableStateOf<Int?>(null)
+        private set
+    var benchmarkEdgeMs by mutableStateOf<Int?>(null)
+        private set
+    var benchmarkFinalMs by mutableStateOf<Int?>(null)
+        private set
+    var benchmarkBufferMb by mutableStateOf<Int?>(null)
+        private set
+    var benchmarkMessage by mutableStateOf("")
         private set
     var isScrubbing by mutableStateOf(false)
         private set
@@ -273,6 +295,21 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
         dateOn = p.getBoolean("dateOn", dateOn)
         dateCorner = p.getString("dateCorner", dateCorner) ?: dateCorner
         exportLongEdge = p.getInt("exportLongEdge", exportLongEdge)
+        realtimePreviewEnabled = p.getBoolean("realtimePreviewEnabled", realtimePreviewEnabled)
+        benchmarkScore = p.getInt("benchmarkScore", -1).takeIf { it >= 0 }
+        benchmarkFullMs = p.getInt("benchmarkFullMs", -1).takeIf { it > 0 }
+        benchmarkReprintMs = p.getInt("benchmarkReprintMs", -1).takeIf { it > 0 }
+        benchmarkEdgeMs = p.getInt("benchmarkEdgeMs", -1).takeIf { it > 0 }
+        benchmarkFinalMs = p.getInt("benchmarkFinalMs", -1).takeIf { it > 0 }
+        benchmarkBufferMb = p.getInt("benchmarkBufferMb", -1).takeIf { it > 0 }
+        if (p.getInt("benchmarkVersion", 0) != BENCHMARK_VERSION) {
+            benchmarkScore = null
+            benchmarkFullMs = null
+            benchmarkReprintMs = null
+            benchmarkEdgeMs = null
+            benchmarkFinalMs = null
+            benchmarkBufferMb = null
+        }
     }
 
     private fun persist() {
@@ -294,6 +331,14 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
             .putBoolean("dateOn", dateOn)
             .putString("dateCorner", dateCorner)
             .putInt("exportLongEdge", exportLongEdge)
+            .putBoolean("realtimePreviewEnabled", realtimePreviewEnabled)
+            .putInt("benchmarkScore", benchmarkScore ?: -1)
+            .putInt("benchmarkFullMs", benchmarkFullMs ?: -1)
+            .putInt("benchmarkReprintMs", benchmarkReprintMs ?: -1)
+            .putInt("benchmarkEdgeMs", benchmarkEdgeMs ?: -1)
+            .putInt("benchmarkFinalMs", benchmarkFinalMs ?: -1)
+            .putInt("benchmarkBufferMb", benchmarkBufferMb ?: -1)
+            .putInt("benchmarkVersion", BENCHMARK_VERSION)
             .apply()
     }
 
@@ -576,8 +621,265 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
         clearComparison()
         block()
         isScrubbing = true
-        render(full = false, debounceMs = 90)
+        if (realtimePreviewEnabled) render(full = false, debounceMs = 90)
     }
+
+    fun setRealtimePreview(enabled: Boolean) {
+        realtimePreviewEnabled = enabled
+        persist()
+        if (!enabled) {
+            isScrubbing = false
+            render(full = false, debounceMs = 0, settlesScrub = true)
+        }
+    }
+
+    val benchmarkRecommendation: Boolean?
+        get() {
+            val score = benchmarkScore ?: return null
+            val full = benchmarkFullMs ?: return null
+            val reprint = benchmarkReprintMs ?: return null
+            val edge = benchmarkEdgeMs ?: return null
+            return score >= 65 && full <= 150 && edge <= 250 && reprint <= 150
+        }
+
+    val benchmarkGrade: String
+        get() = when {
+            benchmarkScore == null -> "未测试"
+            benchmarkScore!! >= 82 -> "S"
+            benchmarkScore!! >= 65 -> "A"
+            benchmarkScore!! >= 45 -> "B"
+            else -> "C"
+        }
+
+    /**
+     * Runs only the paths that decide whether the editor feels responsive:
+     * a complete 800px spectral print, a cached-negative reprint, and the
+     * Vulkan buffer ceiling. A neutral synthetic frame keeps scores comparable
+     * between phones and between camera files.
+     */
+    fun runBenchmark() {
+        if (benchmarkRunning) return
+        val handle = engine
+        if (handle?.isReady != true) {
+            benchmarkMessage = "引擎尚未就绪，暂时不能跑分"
+            return
+        }
+        benchmarkJob?.cancel()
+        benchmarkJob = viewModelScope.launch {
+            benchmarkRunning = true
+            benchmarkMessage = "正在测试照夜渲染…"
+            val width = 1600
+            val height = 1200
+            var failure = ""
+            val result = withContext(native) {
+                val input = benchmarkPixels(width, height)
+                val session = handle.open(
+                    input,
+                    width,
+                    height,
+                    benchmarkOpeningDelta(),
+                )
+                if (session == null) {
+                    failure = handle.lastError.ifEmpty { "无法创建测试会话" }
+                    return@withContext null
+                }
+                try {
+                    session.render("live", true) ?: run {
+                        failure = handle.lastError.ifEmpty { "预热渲染失败" }
+                        return@withContext null
+                    }
+                    val fullTimes = ArrayList<Long>(3)
+                    repeat(3) {
+                        val started = System.nanoTime()
+                        val frame = session.render("live", true)
+                        if (frame == null) {
+                            failure = handle.lastError.ifEmpty { "全管线测试失败" }
+                            return@withContext null
+                        }
+                        fullTimes += TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)
+                    }
+                    val filterDelta = JSONObject()
+                        .put("m_filter_shift", 0.08)
+                        .put("preview_long_edge", 800)
+                    session.setParams(filterDelta.toString())
+                    val reprintTimes = ArrayList<Long>(5)
+                    repeat(5) {
+                        val started = System.nanoTime()
+                        val frame = session.render("live", false)
+                        if (frame == null) {
+                            failure = handle.lastError.ifEmpty { "重印测试失败" }
+                            return@withContext null
+                        }
+                        reprintTimes += TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)
+                    }
+                    session.setParams(
+                        JSONObject()
+                            .put("overscan_active", true)
+                            .put("overscan_format", "135_half")
+                            .put("overscan_gate", "auto")
+                            .put("overscan_holes", "white")
+                            .put("overscan_carrier", "none")
+                            .put("overscan_edge_text", "KODAK PORTRA 400")
+                            .put("date_imprint_active", false)
+                            .toString(),
+                    )
+                    val edgeTimes = ArrayList<Long>(2)
+                    repeat(2) {
+                        val started = System.nanoTime()
+                        val frame = session.render("live", true)
+                        if (frame == null) {
+                            failure = handle.lastError.ifEmpty { "片边渲染测试失败" }
+                            return@withContext null
+                        }
+                        edgeTimes += TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)
+                    }
+                    session.setParams(
+                        JSONObject()
+                            .put("preview_long_edge", 1600)
+                            .toString(),
+                    )
+                    val finalStarted = System.nanoTime()
+                    val finalFrame = session.render("live", true)
+                    if (finalFrame == null) {
+                        failure = handle.lastError.ifEmpty { "1600px 收尾帧测试失败" }
+                        return@withContext null
+                    }
+                    val finalMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - finalStarted).toInt()
+                    val buffer = runCatching {
+                        JSONObject(handle.capabilities)
+                            .optLong("max_storage_buffer_range", 0L)
+                    }.getOrDefault(0L)
+                    BenchmarkResult(
+                        fullTimes.sorted()[fullTimes.size / 2].toInt(),
+                        reprintTimes.sorted()[reprintTimes.size / 2].toInt(),
+                        edgeTimes.sorted()[edgeTimes.size / 2].toInt(),
+                        finalMs,
+                        buffer,
+                    )
+                } finally {
+                    session.close()
+                }
+            }
+            if (result == null) {
+                benchmarkMessage = failure
+                benchmarkRunning = false
+                return@launch
+            }
+            val fullMs = result.fullMs
+            val reprintMs = result.reprintMs
+            val edgeMs = result.edgeMs
+            // Scores describe observable editor responsiveness, not raw chip
+            // benchmarks. 8 fps is the floor for usable interactive feedback;
+            // 12 fps makes filter reprints feel close to continuous.
+            val fullScore = ((1000.0 / fullMs - 1.0) / 7.0).coerceIn(0.0, 1.0)
+            val reprintScore = ((1000.0 / reprintMs - 2.0) / 10.0).coerceIn(0.0, 1.0)
+            val edgeScore = ((1000.0 / edgeMs - 0.5) / 7.5).coerceIn(0.0, 1.0)
+            val finalScore = ((3500.0 - result.finalMs) / 3000.0).coerceIn(0.0, 1.0)
+            val bufferScore = (result.bufferBytes / (512.0 * 1024.0 * 1024.0))
+                .coerceIn(0.0, 1.0)
+            val score = ((fullScore * 0.35 + edgeScore * 0.25 + reprintScore * 0.15 +
+                finalScore * 0.15 + bufferScore * 0.10) * 100)
+                .roundToInt()
+            benchmarkFullMs = fullMs
+            benchmarkReprintMs = reprintMs
+            benchmarkEdgeMs = edgeMs
+            benchmarkFinalMs = result.finalMs
+            benchmarkBufferMb = (result.bufferBytes / (1024.0 * 1024.0))
+                .roundToInt()
+                .takeIf { it > 0 }
+            benchmarkScore = score
+            benchmarkMessage = "测试完成"
+            persist()
+            Diag.log(
+                "BENCH",
+                "score=$score full=${fullMs}ms edge=${edgeMs}ms reprint=${reprintMs}ms " +
+                    "final1600=${result.finalMs}ms buffer=${benchmarkBufferMb ?: 0}MB",
+            )
+            benchmarkRunning = false
+        }
+        benchmarkJob?.invokeOnCompletion {
+            benchmarkRunning = false
+        }
+    }
+
+    private data class BenchmarkResult(
+        val fullMs: Int,
+        val reprintMs: Int,
+        val edgeMs: Int,
+        val finalMs: Int,
+        val bufferBytes: Long,
+    )
+
+    fun useBenchmarkRecommendation() {
+        val recommendation = benchmarkRecommendation ?: return
+        setRealtimePreview(recommendation)
+    }
+
+    private fun benchmarkPixels(width: Int, height: Int): FloatArray {
+        val pixels = FloatArray(width * height * 3)
+        val colors = arrayOf(
+            floatArrayOf(.78f, .18f, .14f), floatArrayOf(.80f, .62f, .20f),
+            floatArrayOf(.27f, .58f, .25f), floatArrayOf(.16f, .62f, .63f),
+            floatArrayOf(.18f, .30f, .70f), floatArrayOf(.54f, .27f, .65f),
+            floatArrayOf(.74f, .44f, .20f), floatArrayOf(.20f, .20f, .20f),
+        )
+        var cursor = 0
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                val u = x.toFloat() / (width - 1)
+                val v = y.toFloat() / (height - 1)
+                val rgb = when {
+                    y < height / 5 -> {
+                        val step = (u * 16f).toInt().coerceIn(0, 15) / 15f
+                        floatArrayOf(step, step, step)
+                    }
+                    y < height * 2 / 5 -> {
+                        val col = (u * 8f).toInt().coerceIn(0, 7)
+                        val row = if (y < height * 3 / 10) 0 else 1
+                        val base = colors[(col + row * 3) % colors.size]
+                        floatArrayOf(base[0], base[1], base[2])
+                    }
+                    y < height * 3 / 5 -> {
+                        val block = (((x / 8) + (y / 8)) and 1) == 0
+                        val edge = if (block) 0.94f else 0.03f
+                        floatArrayOf(edge, 1f - edge, edge)
+                    }
+                    y < height * 4 / 5 -> {
+                        val n = (((x * 1103515245 + y * 12345) ushr 16) and 255) / 255f
+                        floatArrayOf(n, 1f - n, (0.2f + 0.6f * u))
+                    }
+                    else -> {
+                        val radial = (kotlin.math.hypot(
+                            (u - 0.5f).toDouble(),
+                            (v - 0.72f).toDouble(),
+                        ) / 0.72).toFloat()
+                        floatArrayOf(
+                            (0.5f + 0.5f * kotlin.math.sin(radial * 42f)).coerceIn(0f, 1f),
+                            (0.5f + 0.5f * kotlin.math.cos(radial * 31f)).coerceIn(0f, 1f),
+                            (0.5f + 0.5f * kotlin.math.sin((u + v) * 55f)).coerceIn(0f, 1f),
+                        )
+                    }
+                }
+                pixels[cursor++] = rgb[0].coerceIn(0f, 1f)
+                pixels[cursor++] = rgb[1].coerceIn(0f, 1f)
+                pixels[cursor++] = rgb[2].coerceIn(0f, 1f)
+            }
+        }
+        return pixels
+    }
+
+    private fun benchmarkOpeningDelta(): String = JSONObject()
+        .put("film_stock", "kodak_portra_400")
+        .put("print_stock", "kodak_portra_endura")
+        .put("input_color_space", "sRGB")
+        .put("input_cctf_decoding", true)
+        .put("output_color_space", "sRGB")
+        .put("output_cctf_encoding", true)
+        .put("grain_amount", 0.35)
+        .put("halation_amount", 0.45)
+        .put("preview_long_edge", 800)
+        .put("product_defaults", true)
+        .toString()
 
     fun resetLook() {
         update {
@@ -1139,6 +1441,7 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
         renders.close()
         inspectionJob?.cancel()
         comparisonJob?.cancel()
+        benchmarkJob?.cancel()
         session?.let { s -> s.close() }
         engine?.release()
     }
