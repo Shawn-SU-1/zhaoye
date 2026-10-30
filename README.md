@@ -266,6 +266,9 @@ Nikon 的 HE/HE* 压缩 NEF 不在 LibRaw 0.22.2 的能力内，会明确报错�
 - **只有 arm64-v8a**，`minSdk 26`，需要 Vulkan 1.0。
 - **输入是 JPEG/PNG/HEIF/RAW**（ARW、NEF、CR2/CR3、DNG、RAF、ORF、RW2 等，见
   `DarkroomViewModel.RAW_EXTENSIONS`）。
+- **Android 动态照片可编辑封面帧**：系统图库通常会把 Motion Photo 的主图作为
+  JPEG/HEIF 暴露给 App，因此可以直接选入、调整和导出静态成片；目前尚不能识别、
+  编辑内嵌视频或重新封装成动态照片。
 - 导出四档：3200 / 4800 / 6400 / 片源原尺寸。骁龙 888（Adreno 660）实测能到
   **6400×4273（27 MP）**；片源原尺寸（A7R3 的 7968×5320，42 MP）会让 Vulkan 设备掉线，
   见下节。

@@ -200,8 +200,10 @@ does not depend on fonts installed by the ROM.
   to 3200.
 - Half-frame stitching, CLI and MCP are not available. Their upstream
   implementations depend on Apple services and would require a rewrite.
-- Dynamic photos and Live Photos are not yet imported as motion assets; only
-  the still image can be edited.
+- Android Motion Photos can usually be selected and edited through their still
+  cover: the system picker exposes the primary JPEG/HEIF image to the App. Zhaoye
+  does not yet detect the embedded clip, edit its frames or export a new motion
+  photo.
 
 See [ROADMAP.md](ROADMAP.md) for planned work and explicit non-goals.
 
