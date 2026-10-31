@@ -191,3 +191,32 @@ fetch("https://api.github.com/repos/Shawn-SU-1/zhaoye", {
   .catch(() => {
     showStars(cachedStars, false);
   });
+
+const lightbox = document.querySelector("#photo-lightbox");
+const lightboxImage = document.querySelector("#lightbox-image");
+const lightboxClose = document.querySelector(".lightbox-close");
+
+document.querySelectorAll(".gallery-grid button[data-full]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const image = button.querySelector("img");
+    lightboxImage.src = button.dataset.full;
+    lightboxImage.alt = image?.alt || "";
+    lightbox.hidden = false;
+    document.body.style.overflow = "hidden";
+    lightboxClose.focus();
+  });
+});
+
+function closeLightbox() {
+  lightbox.hidden = true;
+  lightboxImage.src = "";
+  document.body.style.overflow = "";
+}
+
+lightboxClose?.addEventListener("click", closeLightbox);
+lightbox?.addEventListener("click", (event) => {
+  if (event.target === lightbox) closeLightbox();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !lightbox.hidden) closeLightbox();
+});

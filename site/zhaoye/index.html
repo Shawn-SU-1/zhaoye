@@ -15,6 +15,7 @@
       <span>照夜 <b>ZHAOYE</b></span>
     </a>
     <nav>
+      <a href="#gallery">影像</a>
       <a href="#download">下载</a>
       <a href="#changes">历史更新</a>
       <a href="#about">关于</a>
@@ -46,6 +47,54 @@
           <img src="assets/screenshot.jpg" alt="照夜单屏暗房界面">
         </div>
         <div class="film-label">KODAK KODACHROME 64 · DIRECT SCAN</div>
+      </div>
+    </section>
+
+    <section id="gallery" class="gallery-section shell">
+      <div class="section-head gallery-head">
+        <div>
+          <p class="eyebrow">PHOTOGRAPHS</p>
+          <h2>沿着冬天，<br>去看见日本。</h2>
+        </div>
+        <p>海岸、雪原与城市的夜色。这些照片均由照夜 App 冲印处理。</p>
+      </div>
+      <div class="gallery-grid">
+        <figure>
+          <button type="button" data-full="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/0e3d41a50d75f4ae4836c3f131570659.jpg">
+            <img src="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/0e3d41a50d75f4ae4836c3f131570659.jpg" alt="冬日海岸铁路" loading="lazy" decoding="async">
+          </button>
+          <figcaption><span>01</span>冬日海岸</figcaption>
+        </figure>
+        <figure>
+          <button type="button" data-full="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/4d706a786484b71d55e93bc6aab0d02e.jpg">
+            <img src="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/4d706a786484b71d55e93bc6aab0d02e.jpg" alt="雪原公路" loading="lazy" decoding="async">
+          </button>
+          <figcaption><span>02</span>雪原之上</figcaption>
+        </figure>
+        <figure>
+          <button type="button" data-full="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/7a512f96c36ece5e28bcdfd2f0914948.jpg">
+            <img src="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/7a512f96c36ece5e28bcdfd2f0914948.jpg" alt="东京城市夜景" loading="lazy" decoding="async">
+          </button>
+          <figcaption><span>03</span>城市入夜</figcaption>
+        </figure>
+        <figure>
+          <button type="button" data-full="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/80668023f0367ea194d72bb52db6618a.jpg">
+            <img src="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/80668023f0367ea194d72bb52db6618a.jpg" alt="雪山与冰河" loading="lazy" decoding="async">
+          </button>
+          <figcaption><span>04</span>冰河切面</figcaption>
+        </figure>
+        <figure>
+          <button type="button" data-full="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/bb24f2c8ebb71897b13da076ac7491f7.jpg">
+            <img src="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/bb24f2c8ebb71897b13da076ac7491f7.jpg" alt="东京塔夜景" loading="lazy" decoding="async">
+          </button>
+          <figcaption><span>05</span>东京灯火</figcaption>
+        </figure>
+        <figure>
+          <button type="button" data-full="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/d972ff0fe7976a5249550d167d0b1ef0.jpg">
+            <img src="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/d972ff0fe7976a5249550d167d0b1ef0.jpg" alt="富士山与五重塔" loading="lazy" decoding="async">
+          </button>
+          <figcaption><span>06</span>富士暮色</figcaption>
+        </figure>
       </div>
     </section>
 
@@ -136,6 +185,11 @@
     <span>GPL-3.0-or-later</span>
     <span>更新页由国内服务器提供</span>
   </footer>
+
+  <div id="photo-lightbox" class="photo-lightbox" role="dialog" aria-modal="true" aria-label="照片大图" hidden>
+    <button class="lightbox-close" type="button" aria-label="关闭">×</button>
+    <img id="lightbox-image" src="" alt="">
+  </div>
 
   <script src="app.js"></script>
 </body>
