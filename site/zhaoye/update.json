@@ -1,11 +1,13 @@
 {
-  "version": "0.2.4.1",
-  "release_notes": "修复竖拍 RAW 照片在 6400 和片源原尺寸导出时被横向拉伸的问题。\n3200、4800、6400、片源原尺寸和带片边原尺寸现在都会保持正确方向与比例。",
-  "sha256": "65169ff10960e10f7ad8637a2e68bf41f9ad5974e706e36b1873b0e33240dac8",
+  "version": "0.2.5",
+  "release_notes": "更新弹窗加入百度网盘与官网入口。\n下载地址和密码现在由实时更新清单读取。\n修复高像素 RAW 导出尺寸、片门比例和片边文字被照片覆盖的问题。",
+  "sha256": "fd2bf48e199d2c41976b82438fbf387da03c875010f6250c6c51c6c599996258",
   "stargazers_count": 3,
-  "github_release_url": "https://github.com/Shawn-SU-1/zhaoye/releases/tag/v0.2.4.1",
-  "github_apk_url": "https://github.com/Shawn-SU-1/zhaoye/releases/download/v0.2.4.1/Zhaoye-0.2.4.1-arm64-v8a.apk",
+  "github_release_url": "https://github.com/Shawn-SU-1/zhaoye/releases/latest",
+  "github_apk_url": "https://github.com/Shawn-SU-1/zhaoye/releases/latest",
   "domestic_url": "https://wwbjy.lanzouv.com/b0hebl34b",
   "domestic_password": "23nt",
-  "baidu_url": "https://pan.baidu.com/s/1f_aZvZQsR4no8KrLcxiJHQ?pwd=h1ec"
+  "baidu_url": "https://pan.baidu.com/s/1f_aZvZQsR4no8KrLcxiJHQ?pwd=h1ec",
+  "baidu_password": "h1ec",
+  "website_url": "https://zhaoye.8889.hair"
 }

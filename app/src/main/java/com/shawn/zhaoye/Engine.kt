@@ -53,6 +53,7 @@ object Engine {
     external fun nativeGetParams(handle: Long): String
     external fun nativeProgressPercent(handle: Long): Double
     external fun nativeProgressJson(handle: Long): String
+    external fun nativeOverscanGeometry(handle: Long): String
 
     /** Header (int32 width, int32 height) followed by RGBA8 pixels. */
     external fun nativeRender(handle: Long, tier: String, fullRender: Boolean): ByteArray?
@@ -115,6 +116,7 @@ class Session internal constructor(private val engine: Long, private val handle:
     fun progressPercent(): Float =
         Engine.nativeProgressPercent(handle).toFloat().coerceIn(0f, 100f)
     fun progressJson(): String = Engine.nativeProgressJson(handle)
+    fun overscanGeometryJson(): String = Engine.nativeOverscanGeometry(handle)
 
     /**
      * @param fullRender true runs the whole press again (`spk_render`), false

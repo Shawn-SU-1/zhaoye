@@ -126,6 +126,9 @@ fun SettingsScreen(vm: DarkroomViewModel = viewModel(), onBack: () -> Unit) {
     val versionName = runCatching {
         context.packageManager.getPackageInfo(context.packageName, 0).versionName
     }.getOrNull() ?: "?"
+    // Refresh the manifest when settings opens so download URLs and passwords
+    // are not tied to the values fetched at the previous app launch.
+    LaunchedEffect(Unit) { vm.checkForUpdates() }
 
     fun closePage() {
         if (page == SettingsPage.Root) {
@@ -390,7 +393,7 @@ fun SettingsScreen(vm: DarkroomViewModel = viewModel(), onBack: () -> Unit) {
 
         if (page == SettingsPage.Updates) SettingsGroup("软件更新") {
             KeyValue("当前版本", context.packageName + " " + versionName)
-            Body("每次打开 App 都会在后台检查 GitHub Release；没有更新或网络不可用时不会打扰编辑。")
+            Body("每次打开 App 都会读取实时更新清单；没有更新或网络不可用时不会打扰编辑。")
             Action(
                 if (vm.updateChecking) "正在检查…" else "检查更新",
                 Modifier
@@ -399,26 +402,37 @@ fun SettingsScreen(vm: DarkroomViewModel = viewModel(), onBack: () -> Unit) {
             ) {
                 if (!vm.updateChecking) vm.checkForUpdates(manual = true)
             }
-        if (vm.updateMessage.isNotEmpty()) {
-            Text(
-                vm.updateMessage,
-                color = if (vm.updateMessage.startsWith("检查失败")) SafeRed else Amber,
-                fontSize = 11.sp,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-            )
-        }
-        val updateSuffix = vm.updateInfo?.let { " · 新版本 ${it.version}" }.orEmpty()
-        LinkRow(
-            "蓝奏云国内下载$updateSuffix · 密码 ${UpdateChecker.DOMESTIC_DOWNLOAD_PASSWORD}",
-            UpdateChecker.DOMESTIC_DOWNLOAD_URL,
-        ) {
-            open(context, UpdateChecker.DOMESTIC_DOWNLOAD_URL)
-        }
-        LinkRow("百度网盘$updateSuffix · 提取码 h1ec", UpdateChecker.BAIDU_DOWNLOAD_URL) {
-            open(context, UpdateChecker.BAIDU_DOWNLOAD_URL)
-        }
-            LinkRow("GitHub Releases$updateSuffix", UpdateChecker.GITHUB_RELEASES_PAGE) {
-                open(context, UpdateChecker.GITHUB_RELEASES_PAGE)
+            if (vm.updateMessage.isNotEmpty()) {
+                Text(
+                    vm.updateMessage,
+                    color = if (vm.updateMessage.startsWith("检查失败")) SafeRed else Amber,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+            }
+            val downloadInfo = vm.latestRelease ?: UpdateChecker.fallbackInfo(versionName)
+            val updateSuffix = if (UpdateChecker.isNewer(downloadInfo.version, versionName)) {
+                " · 新版本 ${downloadInfo.version}"
+            } else {
+                ""
+            }
+            LinkRow(
+                "蓝奏云国内下载$updateSuffix · 密码 ${downloadInfo.domesticPassword}",
+                downloadInfo.domesticUrl,
+            ) {
+                open(context, downloadInfo.domesticUrl)
+            }
+            LinkRow(
+                "百度网盘$updateSuffix · 提取码 ${downloadInfo.baiduPassword}",
+                downloadInfo.baiduUrl,
+            ) {
+                open(context, downloadInfo.baiduUrl)
+            }
+            LinkRow("GitHub 下载$updateSuffix", downloadInfo.githubUrl) {
+                open(context, downloadInfo.githubUrl)
+            }
+            LinkRow("照夜官方网站", downloadInfo.websiteUrl) {
+                open(context, downloadInfo.websiteUrl)
             }
         }
 

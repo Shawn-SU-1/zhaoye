@@ -1135,7 +1135,7 @@ private fun ExportOptionsSheet(
             Spacer(Modifier.height(16.dp))
             Text("成片尺寸", color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Medium)
             Text(
-                "按成片较长的一边计算；数值越大，细节越多，文件也越大。",
+                "按照片区域较长的一边计算；开启片边时，最终画布会更大。",
                 color = Faint,
                 fontSize = 10.sp,
                 modifier = Modifier.padding(top = 3.dp),

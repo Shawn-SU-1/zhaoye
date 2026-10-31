@@ -18,11 +18,14 @@ data class UpdateInfo(
     val domesticUrl: String,
     val domesticPassword: String,
     val baiduUrl: String,
+    val baiduPassword: String,
+    val websiteUrl: String,
     val notes: String,
 )
 
 data class UpdateCheckResult(
     val update: UpdateInfo? = null,
+    val latest: UpdateInfo? = null,
     val error: String? = null,
 )
 
@@ -36,9 +39,12 @@ object UpdateChecker {
     const val DOMESTIC_DOWNLOAD_PASSWORD = "23nt"
     const val BAIDU_DOWNLOAD_URL =
         "https://pan.baidu.com/s/1f_aZvZQsR4no8KrLcxiJHQ?pwd=h1ec"
+    const val BAIDU_DOWNLOAD_PASSWORD = "h1ec"
+    const val WEBSITE_URL = "https://zhaoye.8889.hair"
     const val GITHUB_RELEASES_PAGE = "https://github.com/Shawn-SU-1/zhaoye/releases"
 
     private val manifestUrls = listOf(
+        "$WEBSITE_URL/update.json",
         "https://gcore.jsdelivr.net/gh/Shawn-SU-1/zhaoye@main/update.json",
         "https://testingcf.jsdelivr.net/gh/Shawn-SU-1/zhaoye@main/update.json",
         "https://ghfast.top/https://raw.githubusercontent.com/Shawn-SU-1/zhaoye/main/update.json",
@@ -62,16 +68,28 @@ object UpdateChecker {
                     newest = candidate
                 }
             }
-            val update = newest ?: fetchReleaseFeed(current)
-            if (update != null && isNewer(update.version, current)) {
-                UpdateCheckResult(update = update)
-            } else {
-                UpdateCheckResult()
-            }
+            val latest = newest ?: fetchReleaseFeed(current)
+            UpdateCheckResult(
+                update = latest?.takeIf { isNewer(it.version, current) },
+                latest = latest,
+            )
         }.getOrElse {
             UpdateCheckResult(error = it.message ?: it.javaClass.simpleName)
         }
     }
+
+    /** Built-in links used only when the live manifest cannot be reached. */
+    fun fallbackInfo(currentVersion: String): UpdateInfo = UpdateInfo(
+        currentVersion = currentVersion,
+        version = currentVersion,
+        githubUrl = GITHUB_RELEASES_PAGE,
+        domesticUrl = DOMESTIC_DOWNLOAD_URL,
+        domesticPassword = DOMESTIC_DOWNLOAD_PASSWORD,
+        baiduUrl = BAIDU_DOWNLOAD_URL,
+        baiduPassword = BAIDU_DOWNLOAD_PASSWORD,
+        websiteUrl = WEBSITE_URL,
+        notes = "",
+    )
 
     private fun fetchManifest(url: String, current: String): UpdateInfo? {
         val root = JSONObject(fetchText(url, "application/json", current))
@@ -83,6 +101,9 @@ object UpdateChecker {
         val domesticPassword = root.optString("domestic_password")
             .ifBlank { DOMESTIC_DOWNLOAD_PASSWORD }
         val baidu = root.optString("baidu_url").ifBlank { BAIDU_DOWNLOAD_URL }
+        val baiduPassword = root.optString("baidu_password")
+            .ifBlank { BAIDU_DOWNLOAD_PASSWORD }
+        val website = root.optString("website_url").ifBlank { WEBSITE_URL }
         return UpdateInfo(
             currentVersion = current,
             version = version,
@@ -90,6 +111,8 @@ object UpdateChecker {
             domesticUrl = domestic,
             domesticPassword = domesticPassword,
             baiduUrl = baidu,
+            baiduPassword = baiduPassword,
+            websiteUrl = website,
             notes = root.optString("release_notes").trim().take(1_600),
         )
     }
@@ -128,6 +151,8 @@ object UpdateChecker {
             domesticUrl = DOMESTIC_DOWNLOAD_URL,
             domesticPassword = DOMESTIC_DOWNLOAD_PASSWORD,
             baiduUrl = BAIDU_DOWNLOAD_URL,
+            baiduPassword = BAIDU_DOWNLOAD_PASSWORD,
+            websiteUrl = WEBSITE_URL,
             notes = Html.fromHtml(
                 unescapeXml(encodedNotes),
                 Html.FROM_HTML_MODE_LEGACY,

@@ -14,6 +14,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -40,7 +41,8 @@ fun UpdatePrompt(info: UpdateInfo, visible: Boolean, onDismiss: () -> Unit) {
                     fontSize = 12.sp,
                 )
                 Text(
-                    "蓝奏云密码 ${info.domesticPassword}；百度网盘密码 h1ec。",
+                    "蓝奏云密码 ${info.domesticPassword}；" +
+                        "百度网盘密码 ${info.baiduPassword}。",
                     color = Amber,
                     fontSize = 11.sp,
                     modifier = Modifier.padding(top = 8.dp),
@@ -57,13 +59,27 @@ fun UpdatePrompt(info: UpdateInfo, visible: Boolean, onDismiss: () -> Unit) {
             }
         },
         confirmButton = {
-            Row {
-                TextButton(
-                    onClick = {
-                        openUpdate(context, info.domesticUrl)
-                        onDismiss()
-                    },
-                ) { Text("蓝奏云", color = Amber) }
+            Column(horizontalAlignment = Alignment.End) {
+                Row {
+                    TextButton(
+                        onClick = {
+                            openUpdate(context, info.domesticUrl)
+                            onDismiss()
+                        },
+                    ) { Text("蓝奏云", color = Amber) }
+                    TextButton(
+                        onClick = {
+                            openUpdate(context, info.baiduUrl)
+                            onDismiss()
+                        },
+                    ) { Text("百度", color = Amber) }
+                    TextButton(
+                        onClick = {
+                            openUpdate(context, info.websiteUrl)
+                            onDismiss()
+                        },
+                    ) { Text("官网", color = Faint) }
+                }
                 TextButton(
                     onClick = {
                         openUpdate(context, info.githubUrl)

@@ -233,6 +233,18 @@ Java_com_shawn_zhaoye_Engine_nativeProgressJson(JNIEnv* env, jclass, jlong handl
     return to_jstring(env, out);
 }
 
+JNIEXPORT jstring JNICALL
+Java_com_shawn_zhaoye_Engine_nativeOverscanGeometry(JNIEnv* env, jclass, jlong handle) {
+    auto* h = reinterpret_cast<SessionHandle*>(handle);
+    if (!h) return to_jstring(env, "{\"valid\":false}");
+    char* reply = nullptr;
+    const spk_status status = spk_overscan_geometry(h->session, &reply);
+    std::string out = reply ? reply : "{\"valid\":false}";
+    free_result_json(reply);
+    if (status != SPK_OK) out = "{\"valid\":false}";
+    return to_jstring(env, out);
+}
+
 // Returns header (int32 width, int32 height) followed by RGBA8 pixels. The
 // engine hands back RGBA16; narrowing here keeps the boundary one array.
 JNIEXPORT jbyteArray JNICALL

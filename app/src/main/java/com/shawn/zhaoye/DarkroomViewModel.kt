@@ -6,6 +6,7 @@ import android.graphics.Canvas
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Rect
 import android.net.Uri
@@ -46,6 +47,13 @@ data class ExportProgressUi(
     val percent: Int,
     val stage: String,
     val estimate: ExportEstimate,
+)
+
+private data class OverscanTemplate(
+    val base: Bitmap?,
+    val clean: Bitmap?,
+    val gateQuad: FloatArray?,
+    val error: String,
 )
 
 /**
@@ -202,6 +210,9 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var updateInfo by mutableStateOf<UpdateInfo?>(null)
         private set
+    /** Newest manifest, even when it is not newer than this installed build. */
+    var latestRelease by mutableStateOf<UpdateInfo?>(null)
+        private set
     var updatePromptVisible by mutableStateOf(false)
         private set
     var updateMessage by mutableStateOf("")
@@ -291,6 +302,7 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
         updateJob = viewModelScope.launch {
             val result = UpdateChecker.check(getApplication())
             updateChecking = false
+            result.latest?.let { latestRelease = it }
             val found = result.update
             if (found != null) {
                 updateInfo = found
@@ -420,6 +432,9 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
 
     private var cachedEstimatePreview: Bitmap? = null
     private var cachedPreviewJpegBytes = 0L
+    /** First gate from the last overscan render, eight normalised x/y values. */
+    @Volatile
+    private var overscanGateQuad: FloatArray? = null
 
     private fun previewJpegBytes(bitmap: Bitmap): Long {
         if (cachedEstimatePreview === bitmap) return cachedPreviewJpegBytes
@@ -447,30 +462,62 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
 
         val isRawInput = lastFile?.let(::isRaw) == true
         val requested = if (requestedLongEdge == 0 && !isRawInput) 3200 else requestedLongEdge
-        val sourceLong = max(sourceW, sourceH)
+        val crop = gateCropRect()
+        val croppedSourceW = (sourceW * (crop?.w ?: 1.0)).roundToInt().coerceAtLeast(1)
+        val croppedSourceH = (sourceH * (crop?.h ?: 1.0)).roundToInt().coerceAtLeast(1)
+        val sourceLong = max(croppedSourceW, croppedSourceH)
         val baseLong = if (requested == 0) sourceLong else minOf(requested, sourceLong)
         if (baseLong <= 0) return ExportEstimate(0, 0, 0L)
 
-        val previewAspect = bitmap?.let { it.width.toDouble() / it.height }
-        val sourceAspect = sourceW.toDouble() / sourceH
-        val outputAspect = if (overscanOn && previewAspect != null) previewAspect else sourceAspect
-        val overscanScale = if (overscanOn && bitmap != null) {
-            val previewLong = max(bitmap.width, bitmap.height).toDouble()
-            val targetPreviewLong = minOf(1600, sourceLong).coerceAtLeast(1).toDouble()
-            (previewLong / targetPreviewLong).takeIf { it in 0.75..1.45 } ?: 1.045
+        // The requested value is an output size, not a property of whichever
+        // live preview tier happened to be rendered. Scaling it by the live
+        // bitmap made 3200 show as 2842 and let a 1600 px preview cap every
+        // larger choice at the same dimensions.
+        val photoAspect = croppedSourceW.toDouble() / croppedSourceH
+        val photoW = if (photoAspect >= 1.0) {
+            baseLong
         } else {
-            1.0
+            (baseLong * photoAspect).roundToInt().coerceAtLeast(1)
         }
-        val outputLong = (baseLong * overscanScale).roundToInt().coerceAtLeast(1)
-        val outputW = if (outputAspect >= 1.0) {
-            outputLong
+        val photoH = if (photoAspect >= 1.0) {
+            (baseLong / photoAspect).roundToInt().coerceAtLeast(1)
         } else {
-            (outputLong * outputAspect).roundToInt().coerceAtLeast(1)
+            baseLong
         }
-        val outputH = if (outputAspect >= 1.0) {
-            (outputLong / outputAspect).roundToInt().coerceAtLeast(1)
+        val quad = overscanGateQuad
+        val gateW = quad?.let { q ->
+            val left = (0 until 4).minOf { q[it * 2] }.toDouble()
+            val right = (0 until 4).maxOf { q[it * 2] }.toDouble()
+            right - left
+        } ?: 0.0
+        val gateH = quad?.let { q ->
+            val top = (0 until 4).minOf { q[it * 2 + 1] }.toDouble()
+            val bottom = (0 until 4).maxOf { q[it * 2 + 1] }.toDouble()
+            bottom - top
+        } ?: 0.0
+        val previewAspect = bitmap?.let { it.width.toDouble() / it.height } ?: photoAspect
+        val outputW: Int
+        val outputH: Int
+        if (overscanOn && requested != 0) {
+            val outputLong = baseLong
+            outputW = if (previewAspect >= 1.0) outputLong
+            else (outputLong * previewAspect).roundToInt().coerceAtLeast(1)
+            outputH = if (previewAspect >= 1.0)
+                (outputLong / previewAspect).roundToInt().coerceAtLeast(1)
+            else outputLong
+        } else if (overscanOn && gateW > 0.01 && gateH > 0.01) {
+            outputW = (photoW / gateW).roundToInt().coerceAtLeast(1)
+            outputH = (photoH / gateH).roundToInt().coerceAtLeast(1)
+        } else if (overscanOn) {
+            val outputLong = max(photoW, photoH)
+            outputW = if (previewAspect >= 1.0) outputLong
+            else (outputLong * previewAspect).roundToInt().coerceAtLeast(1)
+            outputH = if (previewAspect >= 1.0)
+                (outputLong / previewAspect).roundToInt().coerceAtLeast(1)
+            else outputLong
         } else {
-            outputLong
+            outputW = photoW
+            outputH = photoH
         }
 
         val outputPixels = outputW.toLong() * outputH.toLong()
@@ -622,23 +669,33 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
                 // just failed -- read from the main thread it comes back empty
                 // and the user sees "this RAW cannot be read" with no reason.
                 rawReport = if (opened == null && !report.contains("\"error\"")) errorJson(handle) else report
-                // LibRaw applies EXIF camera orientation while decoding.
-                // `raw` is the unrotated sensor rectangle, so using it for the
-                // displayed/exported canvas stretches portrait shots. Prefer
-                // the oriented `decoded` dimensions and fall back only when an
-                // older/partial report does not provide them.
+                // LibRaw applies EXIF camera orientation while decoding, and
+                // `decoded` may describe a half-size preview. Keep the full
+                // sensor long edge, but use the decoded/raw orientation to
+                // decide whether that sensor rectangle is portrait or
+                // landscape. Using decoded dimensions directly made a 42 MP
+                // A7R III report only 3984 px while its 1600 preview was open,
+                // which capped every export estimate at the same size.
                 runCatching {
                     val root = JSONTokener(report).nextValue() as JSONObject
-                    val size = listOf("decoded", "downscaled", "raw")
-                        .map(root::optString)
-                        .firstOrNull { it.matches(Regex("""\d+x\d+""")) }
-                        .orEmpty()
-                    val w = size.substringBefore('x').toIntOrNull() ?: 0
-                    val h = size.substringAfter('x', "").toIntOrNull() ?: 0
-                    if (w > 0 && h > 0) {
-                        lastSourceEdge = maxOf(w, h)
-                        frameW = w
-                        frameH = h
+                    fun dims(key: String): Pair<Int, Int>? {
+                        val size = root.optString(key)
+                        if (!size.matches(Regex("""\d+x\d+"""))) return null
+                        val w = size.substringBefore('x').toIntOrNull() ?: return null
+                        val h = size.substringAfter('x', "").toIntOrNull() ?: return null
+                        return (w to h).takeIf { w > 0 && h > 0 }
+                    }
+                    val raw = dims("raw")
+                    val decoded = dims("decoded") ?: dims("downscaled")
+                    if (raw != null) {
+                        val sourceLong = maxOf(raw.first, raw.second)
+                        val sourceShort = minOf(raw.first, raw.second)
+                        val decodedLandscape = decoded?.let { it.first >= it.second } ?: true
+                        val orientedW = if (decodedLandscape) sourceLong else sourceShort
+                        val orientedH = if (decodedLandscape) sourceShort else sourceLong
+                        lastSourceEdge = sourceLong
+                        frameW = orientedW
+                        frameH = orientedH
                     }
                 }
                 Log.i("Zhaoye", "raw $report")
@@ -1371,6 +1428,32 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun gateFit(): DoubleArray? {
         fitNote = ""
+        val crop = gateCropRect() ?: return null
+        // Auto already picked the closest gate; whatever is left is under a
+        // percent and not worth a sentence. A gate the user picked by hand is
+        // worth one, with the way out.
+        if (filmFormat != "auto") {
+            fitNote = " · %s 片门比照片%s，已居中裁 %.0f%%（画幅选自动可避开）"
+                .format(
+                    FORMAT_NAME[resolveFormat()] ?: resolveFormat(),
+                    if (crop.alongX) "窄" else "扁",
+                    crop.lostPercent,
+                )
+        }
+        return doubleArrayOf(crop.x, crop.y, crop.w, crop.h)
+    }
+
+    private data class GateCrop(
+        val x: Double,
+        val y: Double,
+        val w: Double,
+        val h: Double,
+        val alongX: Boolean,
+        val lostPercent: Double,
+    )
+
+    /** Gate crop without the status-line side effect used by [gateFit]. */
+    private fun gateCropRect(): GateCrop? {
         if (!overscanOn || frameW <= 0 || frameH <= 0) return null
         val fmt = resolveFormat()
         val gate = GATE_ASPECT[fmt] ?: return null
@@ -1387,14 +1470,7 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
         val w = if (alongX) keep else 1.0
         val h = if (alongX) 1.0 else keep
         val lost = (1.0 - keep) * 100.0
-        // Auto already picked the closest gate; whatever is left is under a
-        // percent and not worth a sentence. A gate the user picked by hand is
-        // worth one, with the way out.
-        if (filmFormat != "auto") {
-            fitNote = " · %s 片门比照片%s，已居中裁 %.0f%%（画幅选自动可避开）"
-                .format(FORMAT_NAME[fmt] ?: fmt, if (alongX) "窄" else "扁", lost)
-        }
-        return doubleArrayOf((1.0 - w) / 2.0, (1.0 - h) / 2.0, w, h)
+        return GateCrop((1.0 - w) / 2.0, (1.0 - h) / 2.0, w, h, alongX, lost)
     }
 
     private class Applied(val error: String?, val needsFull: Boolean)
@@ -1429,6 +1505,9 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
         val bitmap = withContext(native) {
             val rendered = current.render("live", applied.needsFull)
             if (rendered == null) failure = engine?.lastError.orEmpty()
+            val gate = if (overscanOn) readFirstOverscanGate(current) else null
+            if (gate == null && overscanOn) Diag.log("EXPORT", "overscan gate unavailable after live render")
+            overscanGateQuad = gate
             rendered
         }
         Diag.log(
@@ -1479,6 +1558,11 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             busy = true
             val estimate = estimateExport(exportLongEdge)
+            Diag.log(
+                "EXPORT",
+                "estimate long-edge=${if (exportLongEdge == 0) "source" else exportLongEdge} " +
+                    "-> ${estimate.width}x${estimate.height}",
+            )
             exportProgress = ExportProgressUi(0, "准备底片", estimate)
             say("按原图重新冲印…")
             try {
@@ -1499,10 +1583,28 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
                 say("原图尺寸只对 RAW 可用；JPEG 走 FloatArray 会超过堆上限，已按 3200 导出", error = true)
             }
             val target = if (requested == 0 && (file == null || !isRaw(file))) 3200 else requested
-            val opened = if (file != null) {
-                openSession(handle, file, target, remember = false)
+            val previewLong = preview?.let { maxOf(it.width, it.height) }
+            val overscanFinalScale = if (target != 0 && overscanOn && previewLong != null) {
+                (previewLong.toDouble() / minOf(1600, maxOf(frameW, frameH)).coerceAtLeast(1))
+                    .coerceIn(0.65, 1.35)
             } else {
-                val frame = withContext(Dispatchers.IO) { decode(getApplication(), uri!!, target) }
+                1.0
+            }
+            // The visible tier is requested in decoded pixels. A gate crop and
+            // the film margin make the finished canvas smaller, so a request
+            // for a 3200 px *finished* long edge needs a proportionally larger
+            // decode. The source-size option deliberately keeps the source's
+            // own pixel density instead.
+            val sessionTarget = if (target > 0 && overscanOn) {
+                kotlin.math.ceil(target / overscanFinalScale).roundToInt()
+                    .coerceAtMost(maxOf(target, lastSourceEdge.takeIf { it > 0 } ?: Int.MAX_VALUE))
+            } else {
+                target
+            }
+            val opened = if (file != null) {
+                openSession(handle, file, sessionTarget, remember = false)
+            } else {
+                val frame = withContext(Dispatchers.IO) { decode(getApplication(), uri!!, sessionTarget) }
                 if (frame == null) {
                     say("原图读不出来", error = true)
                     announce(status)
@@ -1537,19 +1639,25 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
                 targetEstimate.width.toLong() * targetEstimate.height.toLong()
             val largeSource = (file?.let(::isRaw) == true || debugForceTiledExport) &&
                 (target == 0 || estimatedPixels > 16_000_000L)
+            val baseExportParams = delta()
+            val cropX = baseExportParams.optDouble("geometry_crop_x", 0.0)
+            val cropY = baseExportParams.optDouble("geometry_crop_y", 0.0)
+            val cropW = baseExportParams.optDouble("geometry_crop_w", 1.0)
+            val cropH = baseExportParams.optDouble("geometry_crop_h", 1.0)
+            val croppedWidth = (frameW * cropW).roundToInt().coerceAtLeast(1)
+            val croppedHeight = (frameH * cropH).roundToInt().coerceAtLeast(1)
             val outputWidth: Int
             val outputHeight: Int
+            val sourceEdge = maxOf(frameW, frameH).coerceAtLeast(1)
+            val decodeScale = if (target == 0) 1.0
+            else sessionTarget.toDouble() / sourceEdge
             if (target == 0) {
-                outputWidth = frameW
-                outputHeight = frameH
-            } else if (frameW >= frameH) {
-                outputWidth = target
-                outputHeight = (target * frameH.toDouble() / frameW).roundToInt()
+                outputWidth = croppedWidth
+                outputHeight = croppedHeight
             } else {
-                outputHeight = target
-                outputWidth = (target * frameW.toDouble() / frameH).roundToInt()
+                outputWidth = (croppedWidth * decodeScale).roundToInt().coerceAtLeast(1)
+                outputHeight = (croppedHeight * decodeScale).roundToInt().coerceAtLeast(1)
             }
-            val baseExportParams = delta()
             var tiled = if (largeSource) {
                 renderSourceTiled(
                     handle,
@@ -1598,22 +1706,45 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
             if (largeSource && overscanOn && tiled.first != null && file != null) {
                 exportProgress = ExportProgressUi(88, "准备片边", estimate)
                 val template = renderOverscanTemplate(handle, file, baseExportParams)
-                if (template.first != null) {
+                if (template.base != null) {
                     exportProgress = ExportProgressUi(93, "合成片边", estimate)
                     val composed = withContext(Dispatchers.Default) {
-                        composeFullOverscan(tiled.first!!, template.first!!)
+                        composeFullOverscan(
+                            tiled.first!!,
+                            template.base!!,
+                            template.clean,
+                            template.gateQuad,
+                        )
                     }
                     tiled.first?.recycle()
-                    template.first?.recycle()
+                    template.base?.recycle()
+                    template.clean?.recycle()
                     tiled = composed
                 } else {
                     tiled.first?.recycle()
-                    tiled = template
+                    tiled = template.base to template.error
                 }
             }
-            val out = tiled.first
+            val renderedOut = tiled.first
             failure = tiled.second
             withContext(native) { opened.close() }
+            val out = if (renderedOut != null && target != 0 &&
+                estimate.width > 0 && estimate.height > 0 &&
+                (renderedOut.width != estimate.width || renderedOut.height != estimate.height)
+            ) {
+                runCatching {
+                    Bitmap.createScaledBitmap(
+                        renderedOut,
+                        estimate.width,
+                        estimate.height,
+                        true,
+                    )
+                }.getOrNull()?.also { scaled ->
+                    if (scaled !== renderedOut) renderedOut.recycle()
+                } ?: renderedOut
+            } else {
+                renderedOut
+            }
             Diag.log(
                 "R",
                 "export long-edge=${if (target == 0) "source" else target.toString()} " +
@@ -1696,6 +1827,10 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
     ): Pair<Bitmap?, String> = withContext(native) {
         if (width <= 0 || height <= 0) return@withContext null to "片源尺寸未知"
         val halo = 160
+        val baseCropX = baseParams.optDouble("geometry_crop_x", 0.0)
+        val baseCropY = baseParams.optDouble("geometry_crop_y", 0.0)
+        val baseCropW = baseParams.optDouble("geometry_crop_w", 1.0)
+        val baseCropH = baseParams.optDouble("geometry_crop_h", 1.0)
         onProgress(4, "全局测光")
         val meterParams = JSONObject(baseParams.toString()).apply {
             put("overscan_active", false)
@@ -1789,10 +1924,16 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
                 if (headroomReferenceMax > 0.0) {
                     put("headroom_reference_max", headroomReferenceMax)
                 }
-                put("geometry_crop_x", 0.0)
-                put("geometry_crop_y", cropTop.toDouble() / height)
-                put("geometry_crop_w", 1.0)
-                put("geometry_crop_h", (cropBottom - cropTop).toDouble() / height)
+                // Preserve the selected gate's horizontal crop. The tile band
+                // is relative to the already-cropped picture, then mapped back
+                // into source-normalised geometry coordinates.
+                put("geometry_crop_x", baseCropX)
+                put("geometry_crop_y", baseCropY + cropTop.toDouble() / height * baseCropH)
+                put("geometry_crop_w", baseCropW)
+                put(
+                    "geometry_crop_h",
+                    (cropBottom - cropTop).toDouble() / height * baseCropH,
+                )
             }
 
         try {
@@ -1920,17 +2061,59 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
         handle: EngineHandle,
         file: File,
         baseParams: JSONObject,
-    ): Pair<Bitmap?, String> {
+    ): OverscanTemplate {
         val templateSession = openSession(handle, file, 3200, remember = false)
-            ?: return null to "片边模板打开失败"
+            ?: return OverscanTemplate(null, null, null, "片边模板打开失败")
         return try {
             withContext(native) {
                 templateSession.setParams(baseParams.toString())
-                val bitmap = templateSession.render("preview", true)
-                bitmap to (if (bitmap == null) handle.lastError.orEmpty() else "")
+                val base = templateSession.render("preview", true)
+                if (base == null) {
+                    return@withContext OverscanTemplate(
+                        null,
+                        null,
+                        null,
+                        handle.lastError.orEmpty(),
+                    )
+                }
+                val gate = readFirstOverscanGate(templateSession)
+                // The composite must draw the high-resolution photo after the
+                // film texture but before the edge print and date back. Render
+                // the same session once more without those marks so their
+                // pixels can be isolated and placed above the photo.
+                val cleanParams = JSONObject(baseParams.toString()).apply {
+                    put("overscan_edge_text", "")
+                    put("date_imprint_active", false)
+                }
+                templateSession.setParams(cleanParams.toString())
+                val clean = templateSession.render("preview", true)
+                OverscanTemplate(base, clean, gate, "")
             }
         } finally {
             withContext(native) { templateSession.close() }
+        }
+    }
+
+    /** Reads the engine's actual first gate instead of assuming a 135 layout. */
+    private fun readFirstOverscanGate(session: Session): FloatArray? {
+        return try {
+            val geometry = session.overscanGeometryJson()
+            val root = JSONObject(geometry)
+            if (!root.optBoolean("valid", false)) {
+                Diag.log("EXPORT", "overscan geometry invalid: ${geometry.take(240)}")
+                return null
+            }
+            val points = root.optJSONArray("gates")?.optJSONArray(0)
+            if (points == null || points.length() < 8) {
+                Diag.log("EXPORT", "overscan geometry has no gate: ${geometry.take(240)}")
+                return null
+            }
+            val quad = FloatArray(8) { i -> points.getDouble(i).toFloat() }
+            Diag.log("EXPORT", "overscan gate=${quad.joinToString(",")}")
+            quad.takeIf { it.all { value -> value.isFinite() && value >= 0f && value <= 1f } }
+        } catch (t: Throwable) {
+            Diag.log("EXPORT", "overscan geometry read failed: ${t.message ?: t.toString()}")
+            null
         }
     }
 
@@ -1939,20 +2122,34 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
      * overscan render. The border is upscaled; the photograph itself remains
      * at source resolution.
      */
-    private fun composeFullOverscan(photo: Bitmap, template: Bitmap): Pair<Bitmap?, String> {
-        // Measured registration of the photo gate inside the 135 overscan
-        // canvas. Keeping these normalised means preview size does not matter.
-        val gate = Rect(
-            (template.width * 0.018529).roundToInt(),
-            (template.height * 0.163291).roundToInt(),
-            (template.width * 0.974297).roundToInt(),
-            (template.height * 0.838608).roundToInt(),
+    private fun composeFullOverscan(
+        photo: Bitmap,
+        template: Bitmap,
+        cleanTemplate: Bitmap?,
+        gateQuad: FloatArray?,
+    ): Pair<Bitmap?, String> {
+        // Engine-produced, normalised gate corners. The old fixed rectangle
+        // was measured only for a 135 strip; using it with 6x7 or 645 put the
+        // full frame into the wrong hole and changed the exported aspect.
+        val quad = gateQuad ?: floatArrayOf(
+            0.018529f, 0.163291f,
+            0.974297f, 0.163291f,
+            0.974297f, 0.838608f,
+            0.018529f, 0.838608f,
         )
-        if (gate.width() <= 0 || gate.height() <= 0) return null to "片边画幅定位失败"
-        val scaleX = photo.width.toDouble() / gate.width()
-        val scaleY = photo.height.toDouble() / gate.height()
-        val finalW = (template.width * scaleX).roundToInt()
-        val finalH = (template.height * scaleY).roundToInt()
+        val gatePx = FloatArray(8) { i ->
+            if (i % 2 == 0) quad[i] * template.width else quad[i] * template.height
+        }
+        fun edge(ax: Float, ay: Float, bx: Float, by: Float): Double =
+            kotlin.math.hypot((bx - ax).toDouble(), (by - ay).toDouble())
+        val gateW = (edge(gatePx[0], gatePx[1], gatePx[2], gatePx[3]) +
+            edge(gatePx[6], gatePx[7], gatePx[4], gatePx[5])) * 0.5
+        val gateH = (edge(gatePx[0], gatePx[1], gatePx[6], gatePx[7]) +
+            edge(gatePx[2], gatePx[3], gatePx[4], gatePx[5])) * 0.5
+        if (gateW <= 1.0 || gateH <= 1.0) return null to "片边画幅定位失败"
+        val scale = (photo.width / gateW + photo.height / gateH) * 0.5
+        val finalW = (template.width * scale).roundToInt()
+        val finalH = (template.height * scale).roundToInt()
         val result = runCatching {
             Bitmap.createBitmap(finalW, finalH, Bitmap.Config.ARGB_8888)
         }.getOrElse { return null to "无法分配带片边全尺寸成片：$it" }
@@ -1960,14 +2157,75 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
         val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
             isDither = true
         }
-        canvas.drawBitmap(template, null, Rect(0, 0, finalW, finalH), paint)
-        val dst = Rect(
-            (gate.left * scaleX).roundToInt(),
-            (gate.top * scaleY).roundToInt(),
-            (gate.left * scaleX).roundToInt() + photo.width,
-            (gate.top * scaleY).roundToInt() + photo.height,
+        canvas.drawBitmap(cleanTemplate ?: template, null, Rect(0, 0, finalW, finalH), paint)
+        val dst = floatArrayOf(
+            gatePx[0] * scale.toFloat(), gatePx[1] * scale.toFloat(),
+            gatePx[2] * scale.toFloat(), gatePx[3] * scale.toFloat(),
+            gatePx[4] * scale.toFloat(), gatePx[5] * scale.toFloat(),
+            gatePx[6] * scale.toFloat(), gatePx[7] * scale.toFloat(),
         )
-        canvas.drawBitmap(photo, null, dst, paint)
+        val src = floatArrayOf(
+            0f, 0f,
+            photo.width.toFloat(), 0f,
+            photo.width.toFloat(), photo.height.toFloat(),
+            0f, photo.height.toFloat(),
+        )
+        val matrix = Matrix()
+        if (!matrix.setPolyToPoly(src, 0, dst, 0, 4)) {
+            result.recycle()
+            return null to "片边画幅透视定位失败"
+        }
+        canvas.drawBitmap(photo, matrix, paint)
+        if (cleanTemplate != null && cleanTemplate.width == template.width &&
+            cleanTemplate.height == template.height
+        ) {
+            val count = template.width * template.height
+            val basePixels = IntArray(count)
+            val cleanPixels = IntArray(count)
+            template.getPixels(basePixels, 0, template.width, 0, 0, template.width, template.height)
+            cleanTemplate.getPixels(
+                cleanPixels,
+                0,
+                cleanTemplate.width,
+                0,
+                0,
+                cleanTemplate.width,
+                cleanTemplate.height,
+            )
+            val overlayPixels = IntArray(count)
+            var changed = 0
+            for (i in 0 until count) {
+                val a = basePixels[i]
+                val b = cleanPixels[i]
+                val dr = kotlin.math.abs(((a shr 16) and 0xFF) - ((b shr 16) and 0xFF))
+                val dg = kotlin.math.abs(((a shr 8) and 0xFF) - ((b shr 8) and 0xFF))
+                val db = kotlin.math.abs((a and 0xFF) - (b and 0xFF))
+                if (dr + dg + db >= 24) {
+                    overlayPixels[i] = a
+                    changed += 1
+                }
+            }
+            Diag.log(
+                "EXPORT",
+                "edge-print overlay changed=${changed * 100.0 / count}%",
+            )
+            val overlay = Bitmap.createBitmap(
+                template.width,
+                template.height,
+                Bitmap.Config.ARGB_8888,
+            )
+            overlay.setPixels(
+                overlayPixels,
+                0,
+                template.width,
+                0,
+                0,
+                template.width,
+                template.height,
+            )
+            canvas.drawBitmap(overlay, null, Rect(0, 0, finalW, finalH), paint)
+            overlay.recycle()
+        }
         return result to ""
     }
 
