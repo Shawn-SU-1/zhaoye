@@ -23,7 +23,7 @@ fetch("update.json", { cache: "no-store" })
     changeVersion.textContent = version;
     lanzouLink.href = data.domestic_url || fallback.domestic_url;
     baiduLink.href = data.baidu_url || fallback.baidu_url;
-    githubRelease.href = data.github_release_url || fallback.github_release_url;
+    githubRelease.href = data.github_apk_url || data.github_release_url || fallback.github_apk_url;
     if (data.release_notes) {
       releaseNotes.innerHTML = "";
       data.release_notes
