@@ -22,6 +22,71 @@ const position = document.querySelector("#changes-position");
 const starCount = document.querySelector("#star-count");
 let cachedStars = fallback.stargazers_count;
 let liveStars = false;
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+const siteNav = document.querySelector(".nav");
+const navLinks = [...document.querySelectorAll(".nav nav a[href^='#']")];
+const trackedSections = [...document.querySelectorAll("main section[id]")];
+let scrollFrame = 0;
+
+function updatePageChrome() {
+  scrollFrame = 0;
+  siteNav?.classList.toggle("is-scrolled", window.scrollY > 18);
+  const marker = window.scrollY + window.innerHeight * 0.34;
+  let active = "";
+  for (const section of trackedSections) {
+    if (section.offsetTop <= marker) active = section.id;
+  }
+  navLinks.forEach((link) => {
+    const selected = link.getAttribute("href") === `#${active}`;
+    link.classList.toggle("is-active", selected);
+    if (selected) link.setAttribute("aria-current", "location");
+    else link.removeAttribute("aria-current");
+  });
+}
+
+function requestPageChrome() {
+  if (scrollFrame) return;
+  scrollFrame = window.requestAnimationFrame(updatePageChrome);
+}
+
+window.addEventListener("scroll", requestPageChrome, { passive: true });
+window.addEventListener("resize", requestPageChrome);
+updatePageChrome();
+
+function observeReveal(nodes) {
+  const items = [...nodes].filter((node) => node && !node.classList.contains("reveal"));
+  if (!items.length) return;
+  if (reduceMotion || !("IntersectionObserver" in window)) {
+    items.forEach((node) => node.classList.add("reveal", "is-visible"));
+    return;
+  }
+  const observer = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      entry.target.classList.add("is-visible");
+      observer.unobserve(entry.target);
+    }
+  }, { threshold: 0.12, rootMargin: "0px 0px -7% 0px" });
+  items.forEach((node, index) => {
+    node.classList.add("reveal");
+    node.style.setProperty("--reveal-delay", `${Math.min(index % 5, 4) * 55}ms`);
+    observer.observe(node);
+  });
+}
+
+observeReveal(document.querySelectorAll([
+  ".section-head",
+  ".gallery-grid figure",
+  ".visitor-stats article",
+  ".visitor-map-card",
+  ".download-card",
+  ".checksum",
+  ".changes-head",
+  ".changelog-viewport",
+  ".features article",
+  ".about > *"
+].join(",")));
 
 function showStars(count, live) {
   const value = Number.isFinite(Number(count)) ? Number(count) : 0;
@@ -128,11 +193,12 @@ function updateControls() {
   previous.disabled = currentIndex === 0;
   next.disabled = currentIndex === cards.length - 1;
   const origin = track.getBoundingClientRect().left;
-  cards.forEach((card) => {
+  cards.forEach((card, index) => {
     const offset = Math.max(0, (card.getBoundingClientRect().left - origin) / stepWidth());
     card.style.opacity = String(Math.max(0.22, 1 - offset * 0.2));
     card.style.filter = `blur(${Math.min(3.6, offset * 0.9).toFixed(2)}px)`;
     card.style.transform = `scale(${Math.max(0.94, 1 - offset * 0.025)})`;
+    card.classList.toggle("is-current", index === currentIndex);
   });
 }
 
@@ -195,22 +261,34 @@ fetch("https://api.github.com/repos/Shawn-SU-1/zhaoye", {
 const lightbox = document.querySelector("#photo-lightbox");
 const lightboxImage = document.querySelector("#lightbox-image");
 const lightboxClose = document.querySelector(".lightbox-close");
+let lightboxTimer = 0;
+let lightboxTrigger = null;
+
+function openLightbox(button) {
+  const image = button.querySelector("img");
+  window.clearTimeout(lightboxTimer);
+  lightboxTrigger = button;
+  lightboxImage.src = button.dataset.full;
+  lightboxImage.alt = image?.alt || "";
+  lightbox.hidden = false;
+  document.body.style.overflow = "hidden";
+  requestAnimationFrame(() => lightbox.classList.add("is-open"));
+  lightboxClose.focus();
+}
 
 document.querySelectorAll(".gallery-grid button[data-full]").forEach((button) => {
-  button.addEventListener("click", () => {
-    const image = button.querySelector("img");
-    lightboxImage.src = button.dataset.full;
-    lightboxImage.alt = image?.alt || "";
-    lightbox.hidden = false;
-    document.body.style.overflow = "hidden";
-    lightboxClose.focus();
-  });
+  button.addEventListener("click", () => openLightbox(button));
 });
 
 function closeLightbox() {
-  lightbox.hidden = true;
-  lightboxImage.src = "";
+  window.clearTimeout(lightboxTimer);
+  lightbox.classList.remove("is-open");
   document.body.style.overflow = "";
+  lightboxTimer = window.setTimeout(() => {
+    lightbox.hidden = true;
+    lightboxImage.src = "";
+    lightboxTrigger?.focus();
+  }, reduceMotion ? 0 : 300);
 }
 
 lightboxClose?.addEventListener("click", closeLightbox);
@@ -234,6 +312,7 @@ const consentEssential = document.querySelector("#consent-essential");
 const consentSettings = document.querySelector("#consent-settings");
 const numberFormat = new Intl.NumberFormat("zh-CN");
 let visitReported = false;
+let consentTimer = 0;
 
 function readConsent() {
   const match = document.cookie.match(/(?:^|;\s*)zhaoye_consent=(accepted|essential)(?:;|$)/);
@@ -254,7 +333,23 @@ function setConsent(value) {
   } catch {
     // The cookie remains the source of truth if storage is unavailable.
   }
-  consentBanner.hidden = true;
+  hideConsent();
+}
+
+function showConsent() {
+  if (!consentBanner) return;
+  window.clearTimeout(consentTimer);
+  consentBanner.hidden = false;
+  requestAnimationFrame(() => consentBanner.classList.add("is-visible"));
+}
+
+function hideConsent(immediate = false) {
+  if (!consentBanner) return;
+  window.clearTimeout(consentTimer);
+  consentBanner.classList.remove("is-visible");
+  consentTimer = window.setTimeout(() => {
+    consentBanner.hidden = true;
+  }, immediate || reduceMotion ? 0 : 280);
 }
 
 function recentLabel(value) {
@@ -276,7 +371,7 @@ function renderStats(data) {
   visitorPlaces.replaceChildren();
   visitorMapEmpty.hidden = locations.length > 0;
 
-  for (const place of locations) {
+  for (const [index, place] of locations.entries()) {
     if (!Number.isFinite(place.lon) || !Number.isFinite(place.lat)) continue;
     const marker = document.createElement("button");
     marker.type = "button";
@@ -284,6 +379,7 @@ function renderStats(data) {
     marker.style.left = `${((place.lon + 180) / 360) * 100}%`;
     marker.style.top = `${((90 - place.lat) / 180) * 100}%`;
     marker.style.setProperty("--size", `${Math.round(10 + Math.sqrt(place.visits / maximum) * 20)}px`);
+    marker.style.setProperty("--marker-delay", `${Math.min(index, 12) * 45}ms`);
     marker.title = `${place.location} · ${place.visitors} 位访客 · ${place.visits} 次访问`;
     marker.setAttribute("aria-label", marker.title);
     visitorMapPoints.appendChild(marker);
@@ -295,6 +391,7 @@ function renderStats(data) {
       ? `${place.location} ${place.country}`
       : place.location;
     count.textContent = `${place.visits} 次`;
+    tag.style.animationDelay = `${Math.min(index, 12) * 40}ms`;
     tag.append(name, count);
     visitorPlaces.appendChild(tag);
   }
@@ -342,10 +439,10 @@ async function reportVisit() {
 
 const initialConsent = readConsent();
 if (initialConsent) {
-  consentBanner.hidden = true;
+  hideConsent(true);
   if (initialConsent === "accepted") reportVisit();
 } else {
-  consentBanner.hidden = false;
+  consentTimer = window.setTimeout(showConsent, reduceMotion ? 0 : 900);
 }
 
 consentAccept?.addEventListener("click", () => {
@@ -356,7 +453,7 @@ consentEssential?.addEventListener("click", () => {
   setConsent("essential");
 });
 consentSettings?.addEventListener("click", () => {
-  consentBanner.hidden = false;
+  showConsent();
   consentBanner.scrollIntoView({ block: "end" });
 });
 
