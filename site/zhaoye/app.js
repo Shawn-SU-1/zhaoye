@@ -1,8 +1,8 @@
 const fallback = {
   version: "0.2.5",
   sha256: "fd2bf48e199d2c41976b82438fbf387da03c875010f6250c6c51c6c599996258",
-  github_release_url: "https://github.com/Shawn-SU-1/zhaoye/releases/latest",
-  github_apk_url: "https://github.com/Shawn-SU-1/zhaoye/releases/latest",
+  github_release_url: "https://github.com/Shawn-SU-1/zhaoye/releases/tag/v0.2.5",
+  github_apk_url: "https://github.com/Shawn-SU-1/zhaoye/releases/download/v0.2.5/Zhaoye-0.2.5-arm64-v8a.apk",
   domestic_url: "https://wwbjy.lanzouv.com/b0hebl34b",
   domestic_password: "23nt",
   baidu_url: "https://pan.baidu.com/s/1f_aZvZQsR4no8KrLcxiJHQ?pwd=h1ec",
