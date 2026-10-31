@@ -32,6 +32,30 @@ GEO_FIELDS = "status,country,countryCode,regionName,city,lat,lon"
 GEO_TTL_SECONDS = 86_400
 VISIT_GAP_SECONDS = 8
 
+REGION_NAMES = {
+    "TW": "中国台湾",
+    "HK": "中国香港",
+    "MO": "中国澳门",
+}
+COUNTRY_ALIASES = {
+    "taiwan": "中国台湾",
+    "taiwan, china": "中国台湾",
+    "taiwan province of china": "中国台湾",
+    "台湾": "中国台湾",
+    "台灣": "中国台湾",
+    "中国台湾": "中国台湾",
+    "hong kong": "中国香港",
+    "hong kong, china": "中国香港",
+    "香港": "中国香港",
+    "中国香港": "中国香港",
+    "macao": "中国澳门",
+    "macau": "中国澳门",
+    "macao, china": "中国澳门",
+    "澳門": "中国澳门",
+    "澳门": "中国澳门",
+    "中国澳门": "中国澳门",
+}
+
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 2_048
 
@@ -98,9 +122,41 @@ def init_db() -> None:
             "INSERT OR IGNORE INTO settings(key, value) VALUES('salt', ?)",
             (secrets.token_hex(32),),
         )
+        migrate_country_names(connection)
         connection.commit()
     finally:
         connection.close()
+
+
+def normalize_country(country: str, country_code: str) -> tuple[str, str]:
+    code = country_code.strip().upper()
+    canonical = REGION_NAMES.get(code)
+    if canonical is None:
+        canonical = COUNTRY_ALIASES.get(country.strip().casefold(), country.strip())
+    return canonical, code
+
+
+def migrate_country_names(connection: sqlite3.Connection) -> None:
+    for code, canonical in REGION_NAMES.items():
+        connection.execute(
+            "UPDATE geo_cache SET country=? WHERE UPPER(country_code)=?",
+            (canonical, code),
+        )
+        connection.execute(
+            "UPDATE visits SET country=? WHERE UPPER(country_code)=?",
+            (canonical, code),
+        )
+    for alias, canonical in COUNTRY_ALIASES.items():
+        if alias == canonical:
+            continue
+        connection.execute(
+            "UPDATE geo_cache SET country=? WHERE LOWER(TRIM(country))=?",
+            (canonical, alias),
+        )
+        connection.execute(
+            "UPDATE visits SET country=? WHERE LOWER(TRIM(country))=?",
+            (canonical, alias),
+        )
 
 
 def salt() -> bytes:
@@ -154,10 +210,15 @@ def lookup_location(visitor: str, ip: str) -> dict:
             with urllib.request.urlopen(req, timeout=2.5) as response:
                 data = json.loads(response.read().decode("utf-8"))
             if data.get("status") == "success":
+                country_code = str(data.get("countryCode") or "").upper()
+                country, country_code = normalize_country(
+                    str(data.get("country") or ""),
+                    country_code,
+                )
                 result = {
                     "location": data.get("city") or data.get("regionName") or data.get("country") or "未知",
-                    "country": data.get("country") or "",
-                    "country_code": data.get("countryCode") or "",
+                    "country": country,
+                    "country_code": country_code,
                     "lat": data.get("lat"),
                     "lon": data.get("lon"),
                 }
@@ -197,12 +258,13 @@ def stats_payload() -> dict:
     ).fetchone()
     locations = db.execute(
         """
-        SELECT location, country, lat, lon,
+        SELECT location, country, country_code,
+               AVG(lat) AS lat, AVG(lon) AS lon,
                COUNT(*) AS visits,
                COUNT(DISTINCT visitor_hash) AS visitors
         FROM visits
         WHERE lat IS NOT NULL AND lon IS NOT NULL
-        GROUP BY location, country, lat, lon
+        GROUP BY location, country, country_code
         ORDER BY visits DESC, visitors DESC
         LIMIT 18
         """

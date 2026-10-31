@@ -361,13 +361,64 @@ function recentLabel(value) {
   return `${date.getMonth() + 1}月${date.getDate()}日`;
 }
 
+function canonicalCountry(place) {
+  const code = String(place.country_code || "").trim().toUpperCase();
+  const country = String(place.country || "").trim();
+  if (code === "TW" || ["台湾", "台灣", "Taiwan", "Taiwan, China"].includes(country)) {
+    return "中国台湾";
+  }
+  if (code === "HK" || ["香港", "Hong Kong", "Hong Kong, China"].includes(country)) {
+    return "中国香港";
+  }
+  if (code === "MO" || ["澳门", "澳門", "Macao", "Macau", "Macao, China"].includes(country)) {
+    return "中国澳门";
+  }
+  return country;
+}
+
+function mergeLocations(rawLocations) {
+  const merged = new Map();
+  for (const place of rawLocations) {
+    const location = String(place.location || "").trim();
+    if (!location) continue;
+    const country = canonicalCountry(place);
+    const key = `${location}\u0000${country}`;
+    const visits = Number(place.visits || 0);
+    const visitors = Number(place.visitors || 0);
+    const lat = Number(place.lat);
+    const lon = Number(place.lon);
+    const current = merged.get(key);
+    if (!current) {
+      merged.set(key, {
+        ...place,
+        location,
+        country,
+        country_code: String(place.country_code || "").toUpperCase(),
+        visits,
+        visitors,
+        lat,
+        lon,
+      });
+      continue;
+    }
+    current.visits += visits;
+    current.visitors += visitors;
+    if (Number.isFinite(lat) && Number.isFinite(lon)) {
+      current.lat = (current.lat + lat) / 2;
+      current.lon = (current.lon + lon) / 2;
+    }
+  }
+  return [...merged.values()].sort((a, b) =>
+    b.visits - a.visits || b.visitors - a.visitors);
+}
+
 function renderStats(data) {
   statViews.textContent = numberFormat.format(data.views || 0);
   statVisitors.textContent = numberFormat.format(data.visitors || 0);
   statCities.textContent = numberFormat.format(data.cities || 0);
   statUpdated.textContent = recentLabel(data.updated_at);
 
-  const locations = Array.isArray(data.locations) ? data.locations : [];
+  const locations = mergeLocations(Array.isArray(data.locations) ? data.locations : []);
   const maximum = Math.max(1, ...locations.map((place) => place.visits || 0));
   visitorMapPoints.replaceChildren();
   visitorPlaces.replaceChildren();
@@ -382,16 +433,17 @@ function renderStats(data) {
     marker.style.top = `${((90 - place.lat) / 180) * 100}%`;
     marker.style.setProperty("--size", `${Math.round(10 + Math.sqrt(place.visits / maximum) * 20)}px`);
     marker.style.setProperty("--marker-delay", `${Math.min(index, 12) * 45}ms`);
-    marker.title = `${place.location} · ${place.visitors} 位访客 · ${place.visits} 次访问`;
+    const placeName = place.country && place.country !== place.location
+      ? `${place.location} ${place.country}`
+      : place.location;
+    marker.title = `${placeName} · ${place.visitors} 位访客 · ${place.visits} 次访问`;
     marker.setAttribute("aria-label", marker.title);
     visitorMapPoints.appendChild(marker);
 
     const tag = document.createElement("span");
     const name = document.createElement("span");
     const count = document.createElement("b");
-    name.textContent = place.country && place.country !== place.location
-      ? `${place.location} ${place.country}`
-      : place.location;
+    name.textContent = placeName;
     count.textContent = `${place.visits} 次`;
     tag.style.animationDelay = `${Math.min(index, 12) * 40}ms`;
     tag.append(name, count);
