@@ -622,11 +622,17 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
                 // just failed -- read from the main thread it comes back empty
                 // and the user sees "this RAW cannot be read" with no reason.
                 rawReport = if (opened == null && !report.contains("\"error\"")) errorJson(handle) else report
-                // The RAW's own long edge, from the report's `raw` field: a
-                // message about "42 MP" has to be able to name it.
+                // LibRaw applies EXIF camera orientation while decoding.
+                // `raw` is the unrotated sensor rectangle, so using it for the
+                // displayed/exported canvas stretches portrait shots. Prefer
+                // the oriented `decoded` dimensions and fall back only when an
+                // older/partial report does not provide them.
                 runCatching {
                     val root = JSONTokener(report).nextValue() as JSONObject
-                    val size = root.optString("raw")
+                    val size = listOf("decoded", "downscaled", "raw")
+                        .map(root::optString)
+                        .firstOrNull { it.matches(Regex("""\d+x\d+""")) }
+                        .orEmpty()
                     val w = size.substringBefore('x').toIntOrNull() ?: 0
                     val h = size.substringAfter('x', "").toIntOrNull() ?: 0
                     if (w > 0 && h > 0) {

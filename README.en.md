@@ -7,7 +7,7 @@
 
 [简体中文](README.md) · [日本語](README.ja.md) · **English**
 
-> **Download Zhaoye 0.2.4**
+> **Download Zhaoye 0.2.4.1**
 >
 > [GitHub Release](https://github.com/Shawn-SU-1/zhaoye/releases/latest) ·
 > [Official website](https://zhaoye.8889.hair/) ·
@@ -15,7 +15,7 @@
 > [Baidu Netdisk (code h1ec)](https://pan.baidu.com/s/1f_aZvZQsR4no8KrLcxiJHQ?pwd=h1ec)
 >
 > Requires a real arm64 device running Android 8.0+ with Vulkan 1.1. The GitHub
-> release is the official `0.2.4` package. The Lanzou mirror is available for
+> release is the official `0.2.4.1` package. The Lanzou mirror is available for
 > mainland China. The app also checks for updates at launch without blocking edits.
 
 An Android darkroom that runs the same C++20 spectral print engine on a phone
@@ -132,7 +132,7 @@ run the Vulkan pipeline; a real device with Vulkan 1.1 is required.
 
 ## Install
 
-Download `Zhaoye-0.2.4-arm64-v8a.apk` from
+Download `Zhaoye-0.2.4.1-arm64-v8a.apk` from
 [Releases](https://github.com/Shawn-SU-1/zhaoye/releases/latest), or use the
 [Lanzou mirror](https://wwbjy.lanzouv.com/b0hebl34b) (password `23nt`) or
 [Baidu Netdisk mirror](https://pan.baidu.com/s/1f_aZvZQsR4no8KrLcxiJHQ?pwd=h1ec)
@@ -143,8 +143,8 @@ Release certificate SHA-256:
 `c4b5c76576838005bf90de0a55331341d9b3132e0ace0077a581385f3b43ca65`
 
 ```bash
-sha256sum Zhaoye-0.2.4-arm64-v8a.apk
-# 5886102796c5699efce480eec6e0d56a83143d7aa10cf359adfd8df8ccc1c210
+sha256sum Zhaoye-0.2.4.1-arm64-v8a.apk
+# 65169ff10960e10f7ad8637a2e68bf41f9ad5974e706e36b1873b0e33240dac8
 ```
 
 Uninstall an older local debug build before installing a release build; the
