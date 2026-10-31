@@ -16,7 +16,7 @@
     </a>
     <nav>
       <a href="#download">下载</a>
-      <a href="#changes">更新日志</a>
+      <a href="#changes">历史更新</a>
       <a href="#about">关于</a>
     </nav>
   </header>
@@ -86,19 +86,28 @@
     </section>
 
     <section id="changes" class="changes shell">
-      <div class="section-head">
-        <p class="eyebrow">CHANGELOG</p>
-        <h2><span id="change-version">0.2.2</span> 更新了什么</h2>
+      <div class="changes-head">
+        <div class="section-head">
+          <p class="eyebrow">CHANGELOG ARCHIVE</p>
+          <h2>每一次冲印，<br>都留在时间线上。</h2>
+          <p>最新版本在最左边。手机可以左右滑动，桌面可用箭头翻阅。</p>
+        </div>
+        <div class="changes-tools">
+          <a class="github-star-link" id="github-star" href="https://github.com/Shawn-SU-1/zhaoye" target="_blank" rel="noreferrer">
+            <span>★</span>
+            <b>GitHub Star</b>
+            <small id="star-count">登录后点 Star</small>
+          </a>
+          <div class="carousel-controls" aria-label="更新记录翻页">
+            <button id="changes-prev" type="button" aria-label="上一版">←</button>
+            <span id="changes-position">1 / 5</span>
+            <button id="changes-next" type="button" aria-label="下一版">→</button>
+          </div>
+        </div>
       </div>
-      <div class="change-panel">
-        <div class="change-number">0.2.2</div>
-        <div>
-          <h3>国内网盘地址更新</h3>
-          <ul id="release-notes">
-            <li>蓝奏云改为固定文件夹分享，密码 23nt。</li>
-            <li>百度网盘和蓝奏云后续只需替换文件夹内的安装包。</li>
-            <li>下载链接保持不变。</li>
-          </ul>
+      <div class="changelog-viewport">
+        <div id="changelog-track" class="changelog-track" tabindex="0" aria-label="历史更新日志">
+          <article class="release-card release-loading">正在读取更新记录…</article>
         </div>
       </div>
     </section>
