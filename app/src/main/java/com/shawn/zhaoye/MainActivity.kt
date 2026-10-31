@@ -110,6 +110,9 @@ class MainActivity : ComponentActivity() {
                 // rotation from replaying it.
                 val vm: DarkroomViewModel = viewModel()
                 var splash by rememberSaveable { mutableStateOf(true) }
+                LaunchedEffect(splash) {
+                    if (!splash) vm.checkForUpdates()
+                }
                 Crossfade(targetState = splash, animationSpec = tween(340)) { opening ->
                     if (opening) {
                         SplashScreen(onDone = { splash = false })
@@ -131,6 +134,13 @@ class MainActivity : ComponentActivity() {
                     )
                 }
                     }
+                vm.updateInfo?.let { update ->
+                    UpdatePrompt(
+                        info = update,
+                        visible = vm.updatePromptVisible,
+                        onDismiss = vm::dismissUpdatePrompt,
+                    )
+                }
             }
         }
     }
@@ -281,7 +291,8 @@ private fun DarkroomScreen(
 
             if (bitmap != null) {
                 Text(
-                    "${vm.film.name} · ${vm.paper.name}",
+                    if (vm.film.positive) "${vm.film.name} · 直接扫描"
+                    else "${vm.film.name} · ${vm.paper.name}",
                     color = Color(0xFFD9D2C6),
                     fontSize = 10.sp,
                     maxLines = 1,

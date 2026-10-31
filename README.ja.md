@@ -7,15 +7,14 @@
 
 [简体中文](README.md) · **日本語** · [English](README.en.md)
 
-> **照夜 0.2.0 をダウンロード**
+> **照夜 0.2.1 をダウンロード**
 >
 > [GitHub Release](https://github.com/Shawn-SU-1/zhaoye/releases/latest) ·
 > [中国本土向け Lanzou Cloud ミラー](https://wwbjy.lanzouv.com/i3EI64e0cfvc)
 >
 > Android 8.0 以上、Vulkan 1.1 対応の arm64 実機が必要です。GitHub Release が
-> 正式な `0.2.0` パッケージです。Lanzou Cloud のファイル名は
-> `0.2.0-dev` のままの場合があります。アプリ設定のバージョンと下記チェックサムを
-> 確認してください。
+> 正式な `0.2.1` パッケージです。中国本土では Lanzou Cloud も利用できます。
+> アプリは起動時に更新を確認し、失敗しても編集を妨げません。
 
 同じ C++20 スペクトル現像エンジンを Vulkan compute でスマートフォン上に
 実行する Android 暗室です。効果をフィルターとして描き直すアプリではありません。
@@ -115,7 +114,7 @@ NDK と LibRaw を探します。NDK と LibRaw はリポジトリに含みま�
 ## インストール
 
 [Releases](https://github.com/Shawn-SU-1/zhaoye/releases/latest) から
-`Zhaoye-0.2.0-arm64-v8a.apk` を取得するか、
+`Zhaoye-0.2.1-arm64-v8a.apk` を取得するか、
 [Lanzou Cloud](https://wwbjy.lanzouv.com/i3EI64e0cfvc) を利用してください。
 サイドロードのため、提供元不明アプリのインストール許可を求められる場合があります。
 
@@ -123,8 +122,8 @@ NDK と LibRaw を探します。NDK と LibRaw はリポジトリに含みま�
 `c4b5c76576838005bf90de0a55331341d9b3132e0ace0077a581385f3b43ca65`
 
 ```bash
-sha256sum Zhaoye-0.2.0-arm64-v8a.apk
-# e2a2ea97f0063ef07f5be0e9390bdc30a55e62e97f7aff3b73d34351f6768a74
+sha256sum Zhaoye-0.2.1-arm64-v8a.apk
+# cfc1105b59e861fc0f16e5d50acb9139338207ca64365937b1565c4fb9333cc0
 ```
 
 以前の debug ビルドが入っている場合は、署名が異なるためアンインストールしてから

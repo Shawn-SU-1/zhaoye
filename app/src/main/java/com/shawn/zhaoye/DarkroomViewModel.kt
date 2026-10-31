@@ -134,6 +134,7 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
     private var inspectionJob: Job? = null
     private var comparisonJob: Job? = null
     private var benchmarkJob: Job? = null
+    private var updateJob: Job? = null
 
     // What the current negative was made from, so export can go back to the
     // full-size frame. A launch intent hands over a path rather than a Uri, so
@@ -175,6 +176,14 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
     var benchmarkBufferMb by mutableStateOf<Int?>(null)
         private set
     var benchmarkMessage by mutableStateOf("")
+        private set
+    var updateChecking by mutableStateOf(false)
+        private set
+    var updateInfo by mutableStateOf<UpdateInfo?>(null)
+        private set
+    var updatePromptVisible by mutableStateOf(false)
+        private set
+    var updateMessage by mutableStateOf("")
         private set
     var isScrubbing by mutableStateOf(false)
         private set
@@ -245,6 +254,38 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
     var exportLongEdge by mutableStateOf(3200)
 
     fun engineForDiag(): EngineHandle? = engine
+
+    /** A no-op when the launch check is already in flight. */
+    fun checkForUpdates(manual: Boolean = false) {
+        if (updateJob?.isActive == true) return
+        updateChecking = true
+        if (manual) updateMessage = "正在检查更新…"
+        updateJob = viewModelScope.launch {
+            val result = UpdateChecker.check(getApplication())
+            updateChecking = false
+            val found = result.update
+            if (found != null) {
+                updateInfo = found
+                updatePromptVisible = true
+                updateMessage = "发现新版本 ${found.version}"
+                Log.i("Zhaoye", "update available=${found.version} current=${found.currentVersion}")
+                Diag.log("UPDATE", "available ${found.version} (current ${found.currentVersion})")
+            } else if (result.error != null) {
+                updateMessage = if (manual) "检查失败：${result.error}" else ""
+                Log.w("Zhaoye", "update check failed: ${result.error}")
+                Diag.log("UPDATE", "check failed: ${result.error}")
+            } else {
+                updateInfo = null
+                updateMessage = if (manual) "当前已是最新版本" else ""
+                Log.i("Zhaoye", "update check: up to date")
+                Diag.log("UPDATE", "up to date")
+            }
+        }
+    }
+
+    fun dismissUpdatePrompt() {
+        updatePromptVisible = false
+    }
 
     /** The long edge of the frame on the easel, so a message can name a size. */
     private var lastSourceEdge = 0
@@ -1092,6 +1133,10 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
     /** `raw` switches the input contract: LibRaw hands back linear ProPhoto. */
     private fun openingDelta(raw: Boolean): String = JSONObject()
         .put("film_stock", filmId)
+        // Slides are already positives. They must bypass the negative-to-paper
+        // stage and be scanned directly, or the complete negative pipeline
+        // prints them as an inverted image.
+        .put("scan_film", film.positive)
         .put("print_stock", paperId)
         .put("input_color_space", if (raw) "ProPhoto RGB" else "sRGB")
         .put("input_cctf_decoding", !raw)
@@ -1113,6 +1158,9 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
      * takes the whole delta with it, which looks exactly like a dead slider. */
     private fun delta(): JSONObject = JSONObject()
         .put("film_stock", filmId)
+        // Also sent when a stock is changed inside an open session, so moving
+        // between slide and negative film cannot leave direct-scan mode stale.
+        .put("scan_film", film.positive)
         .put("print_stock", paperId)
         // Drags use the engine's own 800px interactive tier. The alternative
         // was a display-side colour matrix, but exposure is shaped by the film

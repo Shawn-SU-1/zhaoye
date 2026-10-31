@@ -187,7 +187,8 @@ fun DarkroomScreenV2(
 
             if (bitmap != null) {
                 Text(
-                    "${vm.film.name} · ${vm.paper.name}",
+                    if (vm.film.positive) "${vm.film.name} · 直接扫描"
+                    else "${vm.film.name} · ${vm.paper.name}",
                     color = Color(0xFFD9D2C6),
                     fontSize = 10.sp,
                     maxLines = 1,

@@ -292,6 +292,37 @@ fun SettingsScreen(vm: DarkroomViewModel = viewModel(), onBack: () -> Unit) {
 
         Divider()
 
+        Section("软件更新")
+        KeyValue("当前版本", context.packageName + " " + (runCatching {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName
+        }.getOrNull() ?: "?"))
+        Body("每次打开 App 都会在后台检查 GitHub Release；没有更新或网络不可用时不会打扰编辑。")
+        Action(
+            if (vm.updateChecking) "正在检查…" else "检查更新",
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+        ) {
+            if (!vm.updateChecking) vm.checkForUpdates(manual = true)
+        }
+        if (vm.updateMessage.isNotEmpty()) {
+            Text(
+                vm.updateMessage,
+                color = if (vm.updateMessage.startsWith("检查失败")) SafeRed else Amber,
+                fontSize = 11.sp,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            )
+        }
+        val updateSuffix = vm.updateInfo?.let { " · 新版本 ${it.version}" }.orEmpty()
+        LinkRow("蓝奏云国内下载$updateSuffix", UpdateChecker.DOMESTIC_DOWNLOAD_URL) {
+            open(context, UpdateChecker.DOMESTIC_DOWNLOAD_URL)
+        }
+        LinkRow("GitHub Releases$updateSuffix", UpdateChecker.GITHUB_RELEASES_PAGE) {
+            open(context, UpdateChecker.GITHUB_RELEASES_PAGE)
+        }
+
+        Divider()
+
         Section("关于")
         KeyValue("版本", context.packageName + " " + (runCatching {
             context.packageManager.getPackageInfo(context.packageName, 0).versionName

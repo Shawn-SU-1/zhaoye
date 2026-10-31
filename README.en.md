@@ -7,14 +7,14 @@
 
 [简体中文](README.md) · [日本語](README.ja.md) · **English**
 
-> **Download Zhaoye 0.2.0**
+> **Download Zhaoye 0.2.1**
 >
 > [GitHub Release](https://github.com/Shawn-SU-1/zhaoye/releases/latest) ·
 > [Lanzou Cloud mirror for mainland China](https://wwbjy.lanzouv.com/i3EI64e0cfvc)
 >
 > Requires a real arm64 device running Android 8.0+ with Vulkan 1.1. The GitHub
-> release is the official `0.2.0` package. The Lanzou page may still use a
-> `0.2.0-dev` filename; use the version in App Settings and the checksum below.
+> release is the official `0.2.1` package. The Lanzou mirror is available for
+> mainland China. The app also checks for updates at launch without blocking edits.
 
 An Android darkroom that runs the same C++20 spectral print engine on a phone
 through Vulkan compute. It is not a collection of filters redrawn to imitate
@@ -130,7 +130,7 @@ run the Vulkan pipeline; a real device with Vulkan 1.1 is required.
 
 ## Install
 
-Download `Zhaoye-0.2.0-arm64-v8a.apk` from
+Download `Zhaoye-0.2.1-arm64-v8a.apk` from
 [Releases](https://github.com/Shawn-SU-1/zhaoye/releases/latest), or use the
 [Lanzou mirror](https://wwbjy.lanzouv.com/i3EI64e0cfvc). This is a sideloaded
 APK, so Android may ask for permission to install from an unknown source.
@@ -139,8 +139,8 @@ Release certificate SHA-256:
 `c4b5c76576838005bf90de0a55331341d9b3132e0ace0077a581385f3b43ca65`
 
 ```bash
-sha256sum Zhaoye-0.2.0-arm64-v8a.apk
-# e2a2ea97f0063ef07f5be0e9390bdc30a55e62e97f7aff3b73d34351f6768a74
+sha256sum Zhaoye-0.2.1-arm64-v8a.apk
+# cfc1105b59e861fc0f16e5d50acb9139338207ca64365937b1565c4fb9333cc0
 ```
 
 Uninstall an older local debug build before installing a release build; the
