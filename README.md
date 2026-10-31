@@ -10,6 +10,7 @@
 > **下载照夜 0.2.4**
 >
 > [GitHub 正式版](https://github.com/Shawn-SU-1/zhaoye/releases/latest) ·
+> [官方网站](https://zhaoye.8889.hair/) ·
 > [蓝奏云国内快速下载（密码 23nt）](https://wwbjy.lanzouv.com/b0hebl34b) ·
 > [百度网盘（提取码 h1ec）](https://pan.baidu.com/s/1f_aZvZQsR4no8KrLcxiJHQ?pwd=h1ec)
 >

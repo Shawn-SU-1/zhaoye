@@ -10,6 +10,7 @@
 > **照夜 0.2.4 をダウンロード**
 >
 > [GitHub Release](https://github.com/Shawn-SU-1/zhaoye/releases/latest) ·
+> [公式サイト](https://zhaoye.8889.hair/) ·
 > [中国本土向け Lanzou Cloud ミラー（パスワード 23nt）](https://wwbjy.lanzouv.com/b0hebl34b) ·
 > [Baidu Netdisk（抽出コード h1ec）](https://pan.baidu.com/s/1f_aZvZQsR4no8KrLcxiJHQ?pwd=h1ec)
 >

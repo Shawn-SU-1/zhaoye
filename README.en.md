@@ -10,6 +10,7 @@
 > **Download Zhaoye 0.2.4**
 >
 > [GitHub Release](https://github.com/Shawn-SU-1/zhaoye/releases/latest) ·
+> [Official website](https://zhaoye.8889.hair/) ·
 > [Lanzou Cloud mirror (password 23nt)](https://wwbjy.lanzouv.com/b0hebl34b) ·
 > [Baidu Netdisk (code h1ec)](https://pan.baidu.com/s/1f_aZvZQsR4no8KrLcxiJHQ?pwd=h1ec)
 >
