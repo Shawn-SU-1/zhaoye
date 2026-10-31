@@ -45,6 +45,8 @@ third_party/LibRaw-0.22.2/
 *.log
 *.orig
 *.rej
+__pycache__/
+*.pyc
 
 # 签名密钥，绝不入库
 keystore.properties

@@ -16,6 +16,7 @@
     </a>
     <nav>
       <a href="#gallery">影像</a>
+      <a href="#visitors">足迹</a>
       <a href="#download">下载</a>
       <a href="#changes">历史更新</a>
       <a href="#about">关于</a>
@@ -95,6 +96,34 @@
           </button>
           <figcaption><span>06</span>富士暮色</figcaption>
         </figure>
+      </div>
+    </section>
+
+    <section id="visitors" class="visitor-section shell">
+      <div class="section-head visitor-head">
+        <p class="eyebrow">VISITORS</p>
+        <h2>有人来过，<br>光就留下了。</h2>
+        <p>只统计访问次数、独立访客和大致城市，不记录原始 IP，也不用于广告画像。</p>
+      </div>
+      <div class="visitor-stats" aria-live="polite">
+        <article><strong id="stat-views">—</strong><span>总浏览</span></article>
+        <article><strong id="stat-visitors">—</strong><span>访客数</span></article>
+        <article><strong id="stat-cities">—</strong><span>到访城市</span></article>
+        <article><strong id="stat-updated">—</strong><span>最近到访</span></article>
+      </div>
+      <div class="visitor-map-card">
+        <div class="map-title">
+          <h3>访客地图</h3>
+          <span>城市级粗粒度定位</span>
+        </div>
+        <div id="visitor-map" class="visitor-map">
+          <img src="assets/world-map.svg" alt="世界地图">
+          <div id="visitor-map-points" class="visitor-map-points"></div>
+          <p id="visitor-map-empty" class="visitor-map-empty">还没有访客数据</p>
+        </div>
+        <div id="visitor-places" class="visitor-places">
+          <span class="place-empty">等待第一位访客</span>
+        </div>
       </div>
     </section>
 
@@ -183,8 +212,20 @@
   <footer class="shell">
     <span>照夜 ZHAOYE · 夢島千尋 / Shawn</span>
     <span>GPL-3.0-or-later</span>
-    <span>更新页由国内服务器提供</span>
+    <button id="consent-settings" type="button">Cookie 设置</button>
   </footer>
+
+  <aside id="cookie-consent" class="cookie-consent" aria-live="polite" hidden>
+    <div>
+      <p class="eyebrow">PRIVACY</p>
+      <h3>Cookie 与访问统计</h3>
+      <p>同意后会记录一次匿名访问，并通过服务器向 ip-api.com 查询大致城市，用于访客统计与地图。原始 IP 不写入统计数据库，不用于广告。</p>
+    </div>
+    <div class="cookie-actions">
+      <button id="consent-essential" type="button" class="button quiet">仅必要</button>
+      <button id="consent-accept" type="button" class="button primary">同意统计</button>
+    </div>
+  </aside>
 
   <div id="photo-lightbox" class="photo-lightbox" role="dialog" aria-modal="true" aria-label="照片大图" hidden>
     <button class="lightbox-close" type="button" aria-label="关闭">×</button>

@@ -220,3 +220,145 @@ lightbox?.addEventListener("click", (event) => {
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !lightbox.hidden) closeLightbox();
 });
+
+const statViews = document.querySelector("#stat-views");
+const statVisitors = document.querySelector("#stat-visitors");
+const statCities = document.querySelector("#stat-cities");
+const statUpdated = document.querySelector("#stat-updated");
+const visitorMapPoints = document.querySelector("#visitor-map-points");
+const visitorMapEmpty = document.querySelector("#visitor-map-empty");
+const visitorPlaces = document.querySelector("#visitor-places");
+const consentBanner = document.querySelector("#cookie-consent");
+const consentAccept = document.querySelector("#consent-accept");
+const consentEssential = document.querySelector("#consent-essential");
+const consentSettings = document.querySelector("#consent-settings");
+const numberFormat = new Intl.NumberFormat("zh-CN");
+let visitReported = false;
+
+function readConsent() {
+  const match = document.cookie.match(/(?:^|;\s*)zhaoye_consent=(accepted|essential)(?:;|$)/);
+  if (match) return match[1];
+  try {
+    const stored = localStorage.getItem("zhaoye_consent");
+    return stored === "accepted" || stored === "essential" ? stored : "";
+  } catch {
+    return "";
+  }
+}
+
+function setConsent(value) {
+  const secure = location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `zhaoye_consent=${value}; Max-Age=15552000; Path=/; SameSite=Lax${secure}`;
+  try {
+    localStorage.setItem("zhaoye_consent", value);
+  } catch {
+    // The cookie remains the source of truth if storage is unavailable.
+  }
+  consentBanner.hidden = true;
+}
+
+function recentLabel(value) {
+  if (!value) return "—";
+  const date = new Date(`${value.replace(" ", "T")}Z`);
+  if (Number.isNaN(date.getTime())) return "—";
+  return `${date.getMonth() + 1}月${date.getDate()}日`;
+}
+
+function renderStats(data) {
+  statViews.textContent = numberFormat.format(data.views || 0);
+  statVisitors.textContent = numberFormat.format(data.visitors || 0);
+  statCities.textContent = numberFormat.format(data.cities || 0);
+  statUpdated.textContent = recentLabel(data.updated_at);
+
+  const locations = Array.isArray(data.locations) ? data.locations : [];
+  const maximum = Math.max(1, ...locations.map((place) => place.visits || 0));
+  visitorMapPoints.replaceChildren();
+  visitorPlaces.replaceChildren();
+  visitorMapEmpty.hidden = locations.length > 0;
+
+  for (const place of locations) {
+    if (!Number.isFinite(place.lon) || !Number.isFinite(place.lat)) continue;
+    const marker = document.createElement("button");
+    marker.type = "button";
+    marker.className = "map-point";
+    marker.style.left = `${((place.lon + 180) / 360) * 100}%`;
+    marker.style.top = `${((90 - place.lat) / 180) * 100}%`;
+    marker.style.setProperty("--size", `${Math.round(10 + Math.sqrt(place.visits / maximum) * 20)}px`);
+    marker.title = `${place.location} · ${place.visitors} 位访客 · ${place.visits} 次访问`;
+    marker.setAttribute("aria-label", marker.title);
+    visitorMapPoints.appendChild(marker);
+
+    const tag = document.createElement("span");
+    const name = document.createElement("span");
+    const count = document.createElement("b");
+    name.textContent = place.country && place.country !== place.location
+      ? `${place.location} ${place.country}`
+      : place.location;
+    count.textContent = `${place.visits} 次`;
+    tag.append(name, count);
+    visitorPlaces.appendChild(tag);
+  }
+
+  if (!visitorPlaces.children.length) {
+    const empty = document.createElement("span");
+    empty.className = "place-empty";
+    empty.textContent = "等待第一位访客";
+    visitorPlaces.appendChild(empty);
+  }
+}
+
+async function refreshStats() {
+  try {
+    const response = await fetch("/api/zhaoye/stats", {
+      cache: "no-store",
+      credentials: "same-origin",
+    });
+    if (!response.ok) return;
+    renderStats(await response.json());
+  } catch {
+    // Analytics is non-essential and must never interrupt the page.
+  }
+}
+
+async function reportVisit() {
+  if (visitReported || readConsent() !== "accepted") return;
+  visitReported = true;
+  try {
+    const response = await fetch("/api/zhaoye/visit", {
+      method: "POST",
+      cache: "no-store",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    if (response.ok) {
+      const data = await response.json();
+      if (data.ok) renderStats(data);
+    }
+  } catch {
+    // Counting a visit is optional; the static site remains fully functional.
+  }
+}
+
+const initialConsent = readConsent();
+if (initialConsent) {
+  consentBanner.hidden = true;
+  if (initialConsent === "accepted") reportVisit();
+} else {
+  consentBanner.hidden = false;
+}
+
+consentAccept?.addEventListener("click", () => {
+  setConsent("accepted");
+  reportVisit();
+});
+consentEssential?.addEventListener("click", () => {
+  setConsent("essential");
+});
+consentSettings?.addEventListener("click", () => {
+  consentBanner.hidden = false;
+  consentBanner.scrollIntoView({ block: "end" });
+});
+
+refreshStats();
+window.setInterval(refreshStats, 60_000);
