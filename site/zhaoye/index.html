@@ -3,10 +3,55 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="照夜 Android 暗房下载、更新日志与多线路下载。">
-  <title>照夜 ZHAOYE · 下载与更新</title>
+  <meta name="description" content="照夜 ZHAOYE 是一款在 Android 手机本地运行的胶片暗房 App，支持 RAW、光谱冲印、片边、实时预览与大图导出。提供官方下载地址与更新日志。">
+  <meta name="keywords" content="照夜,ZHAOYE,照夜App,胶片App,胶片模拟,手机暗房,RAW处理,Android摄影App">
+  <meta name="robots" content="index,follow,max-image-preview:large">
+  <meta name="application-name" content="照夜 ZHAOYE">
+  <meta name="theme-color" content="#0b0907">
+  <link rel="canonical" href="https://zhaoye.8889.hair/">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="zh_CN">
+  <meta property="og:site_name" content="照夜 ZHAOYE">
+  <meta property="og:title" content="照夜 ZHAOYE｜Android 胶片暗房 App">
+  <meta property="og:description" content="不是滤镜，是冲印。照夜在手机本地运行真实的光谱胶片暗房，支持 RAW、片边与大图导出。">
+  <meta property="og:url" content="https://zhaoye.8889.hair/">
+  <meta property="og:image" content="https://zhaoye.8889.hair/assets/screenshot.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="照夜 ZHAOYE｜Android 胶片暗房 App">
+  <meta name="twitter:description" content="不是滤镜，是冲印。手机本地运行的胶片与 RAW 冲印工作流。">
+  <meta name="twitter:image" content="https://zhaoye.8889.hair/assets/screenshot.jpg">
+  <title>照夜 ZHAOYE｜Android 胶片暗房 App 下载与更新</title>
   <link rel="icon" href="assets/app-icon.png">
   <link rel="stylesheet" href="styles.css">
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "照夜 ZHAOYE",
+      "alternateName": ["照夜", "照夜 App", "ZHAOYE 胶片暗房"],
+      "description": "在 Android 手机本地运行光谱胶片冲印流程的摄影 App，支持 RAW、片边、实时预览和大图导出。",
+      "url": "https://zhaoye.8889.hair/",
+      "downloadUrl": "https://github.com/Shawn-SU-1/zhaoye/releases/latest",
+      "applicationCategory": "MultimediaApplication",
+      "operatingSystem": "Android 8.0+",
+      "softwareRequirements": "arm64-v8a, Vulkan 1.1",
+      "isAccessibleForFree": true,
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "CNY"
+      },
+      "author": {
+        "@type": "Person",
+        "name": "夢島千尋 / Shawn",
+        "url": "https://github.com/Shawn-SU-1"
+      },
+      "sameAs": [
+        "https://github.com/Shawn-SU-1/zhaoye"
+      ],
+      "image": "https://zhaoye.8889.hair/assets/screenshot.jpg"
+    }
+  </script>
 </head>
 <body>
   <header class="nav shell">
@@ -26,8 +71,38 @@
   <main>
     <section class="hero shell">
       <div class="hero-copy">
+        <div class="hero-lamp" aria-hidden="true">
+          <svg viewBox="0 0 180 190" role="presentation">
+            <defs>
+              <linearGradient id="lamp-body" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#4c3b2b"/>
+                <stop offset=".55" stop-color="#17120e"/>
+                <stop offset="1" stop-color="#080706"/>
+              </linearGradient>
+              <radialGradient id="lamp-lens">
+                <stop offset="0" stop-color="#fff8de"/>
+                <stop offset=".32" stop-color="#ffd98b"/>
+                <stop offset="1" stop-color="#d18b29"/>
+              </radialGradient>
+            </defs>
+            <path class="lamp-arm" d="M31 169 C41 128, 47 93, 77 67"/>
+            <g transform="rotate(39 87 77)">
+              <path d="M46 47 H118 L133 95 H31 Z" fill="url(#lamp-body)" stroke="#9b7040" stroke-width="1.2"/>
+              <ellipse cx="82" cy="95" rx="51" ry="13" fill="#090705" stroke="#ad7e45" stroke-width="1.2"/>
+              <ellipse cx="82" cy="98" rx="35" ry="8" fill="url(#lamp-lens)"/>
+              <path d="M62 34 H102" stroke="#8b673e" stroke-width="5" stroke-linecap="round"/>
+            </g>
+            <circle cx="31" cy="169" r="7" fill="#8d6738"/>
+          </svg>
+          <span class="lamp-glow"></span>
+          <span class="lamp-beam"></span>
+        </div>
+        <div class="hero-stamp" aria-label="照夜">
+          <span>照夜</span>
+          <small>ZHAOYE</small>
+        </div>
         <p class="eyebrow">ANDROID SPECTRAL DARKROOM</p>
-        <h1>不是滤镜，<br><em>是冲印。</em></h1>
+        <h1 class="hero-title">不是滤镜，<br><em>是冲印。</em></h1>
         <p class="lede">
           照夜把真实的胶片响应、显影与相纸曲线搬进手机。
           同一张照片，沿光谱一路曝光、显影、扫描，而不是盖一层预设颜色。
