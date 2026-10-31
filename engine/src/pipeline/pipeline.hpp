@@ -24,6 +24,7 @@
 // per-run argument, so the parameter works. That is a knowing divergence and
 // the render-parity harness reports it as one.
 #pragma once
+#include <atomic>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -104,6 +105,9 @@ struct Progress {
     std::string progress_id;
     int total_nodes = 0;
     int fired = 0;
+    // A lock-free snapshot for UI polling while the render holds the session
+    // lock. The rest of Progress is worker-owned and is not read concurrently.
+    std::atomic<double>* live_pct = nullptr;
     std::string stage = "queued";
     bool cancelled = false;
     bool done = false;
@@ -113,6 +117,11 @@ struct Progress {
     // empty with the meter off. `spk_progress` reports it (RFC-015 P.1), so a
     // harness can hold every tier to the same number.
     std::optional<double> auto_exposure_ev;
+    // Whole-frame reductions used by the film's highlight nodes. The app
+    // reads these from a safe full-frame preview before rendering source
+    // tiles, then feeds the same maxima back to every tile.
+    std::optional<double> film_boost_reference_max;
+    std::optional<double> headroom_reference_max;
     // RFC-020 §4, step 4: one entry per segment the striped executor ran, with
     // the plan it built and the passes it executed. Both, because they can
     // disagree and that disagreement is a different bug from a wrong plan -- a

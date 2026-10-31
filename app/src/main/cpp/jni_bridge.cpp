@@ -138,6 +138,13 @@ Java_com_shawn_zhaoye_Engine_nativeCapabilities(JNIEnv* env, jclass, jlong handl
 }
 
 JNIEXPORT jstring JNICALL
+Java_com_shawn_zhaoye_Engine_nativeMemoryReport(JNIEnv* env, jclass, jlong handle) {
+    auto* engine = reinterpret_cast<spk_engine*>(handle);
+    const char* text = engine ? spk_memory_report(engine) : nullptr;
+    return to_jstring(env, text ? text : "{}");
+}
+
+JNIEXPORT jstring JNICALL
 Java_com_shawn_zhaoye_Engine_nativeParamsSchema(JNIEnv* env, jclass, jlong handle) {
     auto* engine = reinterpret_cast<spk_engine*>(handle);
     const char* text = engine ? spk_params_schema(engine) : nullptr;
@@ -202,6 +209,24 @@ Java_com_shawn_zhaoye_Engine_nativeGetParams(JNIEnv* env, jclass, jlong handle) 
     if (!h) return to_jstring(env, "{}");
     char* reply = nullptr;
     const spk_status status = spk_get_params(h->session, &reply);
+    std::string out = reply ? reply : "{}";
+    free_result_json(reply);
+    if (status != SPK_OK) out = "{}";
+    return to_jstring(env, out);
+}
+
+JNIEXPORT jdouble JNICALL
+Java_com_shawn_zhaoye_Engine_nativeProgressPercent(JNIEnv*, jclass, jlong handle) {
+    auto* h = reinterpret_cast<SessionHandle*>(handle);
+    return h ? spk_progress_percent(h->session) : 0.0;
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_shawn_zhaoye_Engine_nativeProgressJson(JNIEnv* env, jclass, jlong handle) {
+    auto* h = reinterpret_cast<SessionHandle*>(handle);
+    if (!h) return to_jstring(env, "{}");
+    char* reply = nullptr;
+    const spk_status status = spk_progress(h->session, nullptr, &reply);
     std::string out = reply ? reply : "{}";
     free_result_json(reply);
     if (status != SPK_OK) out = "{}";

@@ -1,6 +1,10 @@
 package com.shawn.zhaoye
 
 import android.graphics.Bitmap
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -42,6 +46,7 @@ fun ZoomablePreview(
 ) {
     var showingPressedOriginal by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val haptics = rememberZhaoyeHaptics()
     val zoomState = rememberZoomState(maxScale = 8f)
     LaunchedEffect(bitmap) {
         zoomState.setContentSize(Size(bitmap.width.toFloat(), bitmap.height.toFloat()))
@@ -56,8 +61,9 @@ fun ZoomablePreview(
                 zoomState = zoomState,
                 enableOneFingerZoom = false,
                 onLongPress = {
-                    showingPressedOriginal = longPressBitmap != null
-                    if (showingPressedOriginal) {
+                    if (longPressBitmap != null) {
+                        haptics.perform(HapticCue.LongPress)
+                        showingPressedOriginal = true
                         scope.launch {
                             delay(1400)
                             showingPressedOriginal = false
@@ -65,6 +71,7 @@ fun ZoomablePreview(
                     }
                 },
                 onDoubleTap = { position ->
+                    haptics.perform(HapticCue.Selection)
                     val next = when {
                         zoomState.scale < 1.5f -> 2f
                         zoomState.scale < 3f -> 4f
@@ -81,37 +88,49 @@ fun ZoomablePreview(
             colorFilter = colorFilter,
             modifier = Modifier.fillMaxSize(),
         )
-        if (originalBitmap != null && compareProgress != null) {
-            val fraction = compareProgress.coerceIn(0f, 1f)
-            Image(
-                bitmap = originalBitmap.asImageBitmap(),
-                contentDescription = "原图对比",
-                contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .drawWithContent {
-                        clipRect(right = size.width * fraction) {
-                            this@drawWithContent.drawContent()
-                        }
-                    },
-            )
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .drawWithContent {
-                        val x = size.width * fraction
-                        drawLine(
-                            color = Color(0xF2F4D35E),
-                            start = androidx.compose.ui.geometry.Offset(x, 0f),
-                            end = androidx.compose.ui.geometry.Offset(x, size.height),
-                            strokeWidth = 2.dp.toPx(),
-                        )
-                    },
-            )
+        AnimatedVisibility(
+            visible = originalBitmap != null && compareProgress != null,
+            enter = fadeIn(tween(140)),
+            exit = fadeOut(tween(100)),
+        ) {
+            val source = originalBitmap ?: return@AnimatedVisibility
+            val fraction = (compareProgress ?: 0f).coerceIn(0f, 1f)
+            Box(Modifier.fillMaxSize()) {
+                Image(
+                    bitmap = source.asImageBitmap(),
+                    contentDescription = "原图对比",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .drawWithContent {
+                            clipRect(right = size.width * fraction) {
+                                this@drawWithContent.drawContent()
+                            }
+                        },
+                )
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .drawWithContent {
+                            val x = size.width * fraction
+                            drawLine(
+                                color = Color(0xF2F4D35E),
+                                start = androidx.compose.ui.geometry.Offset(x, 0f),
+                                end = androidx.compose.ui.geometry.Offset(x, size.height),
+                                strokeWidth = 2.dp.toPx(),
+                            )
+                        },
+                )
+            }
         }
-        if (showingPressedOriginal && longPressBitmap != null) {
+        AnimatedVisibility(
+            visible = showingPressedOriginal && longPressBitmap != null,
+            enter = fadeIn(tween(130)),
+            exit = fadeOut(tween(100)),
+        ) {
+            val source = longPressBitmap ?: return@AnimatedVisibility
             Image(
-                bitmap = longPressBitmap.asImageBitmap(),
+                bitmap = source.asImageBitmap(),
                 contentDescription = "按住查看原图",
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize(),

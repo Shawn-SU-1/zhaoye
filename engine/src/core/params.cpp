@@ -42,6 +42,8 @@ const SchemaField kFields[] = {
     {"print_stock",              "print.info.stock",                      S, PRINT, false, 0, 0, false},
     {"exposure_compensation_ev", "camera.exposure_compensation_ev",       F, SHOOT, true, -8.0, 8.0, false},
     {"auto_exposure",            "camera.auto_exposure",                  B, SHOOT, false, 0, 0, false},
+    {"auto_exposure_override_active", "camera.auto_exposure_override_active", B, SHOOT, false, 0, 0, false},
+    {"auto_exposure_override_ev", "camera.auto_exposure_override_ev",    F, SHOOT, true, -8.0, 8.0, false},
     // RFC-015 §3. Immediately after `auto_exposure`, which is where the Python
     // schema declares it too — `parity_schema.py` compares the two tables in
     // order, not as sets.
@@ -98,6 +100,11 @@ const SchemaField kFields[] = {
     {"striped",                  "settings.striped",                     B, PRINT, false, 0, 0, true},
     {"strip_rows",               "settings.strip_rows",                  I, PRINT, true, 0.0, 16384.0, true},
     {"strip_budget_bytes",       "settings.strip_budget_bytes",          I, PRINT, true, 0.0, 8e9, true},
+    // Source-tile reference statistics. These are SHOOT fields because they
+    // feed the film's global highlight nodes, and zero means "measure this
+    // render" -- the ordinary whole-frame path.
+    {"film_boost_reference_max", "settings.film_boost_reference_max",    F, SHOOT, true, 0.0, 1e8, false},
+    {"headroom_reference_max",   "settings.headroom_reference_max",      F, SHOOT, true, 0.0, 1e8, false},
     // RFC-024's virtual contrast mask. Native-only like the strip fields, so
     // they sit in the same place for the same reason -- before
     // `preview_long_edge`, in `parity_schema.py`'s NATIVE_ONLY order. PRINT
@@ -230,6 +237,7 @@ const SchemaField* find_field(const std::string& name) {
 
 double* float_slot(Params& p, const std::string& path) {
     if (path == "camera.exposure_compensation_ev") return &p.camera.exposure_compensation_ev;
+    if (path == "camera.auto_exposure_override_ev") return &p.camera.auto_exposure_override_ev;
     if (path == "camera.film_format_mm") return &p.camera.film_format_mm;
     if (path == "camera.lens_blur_um") return &p.camera.lens_blur_um;
     if (path == "film_render.halation.halation_amount") return &p.film_render.halation.halation_amount;
@@ -266,6 +274,8 @@ double* float_slot(Params& p, const std::string& path) {
     if (path == "camera.scene_latitude.b_highlight_room") return &p.camera.scene_latitude.b_highlight_room;
     if (path == "camera.scene_latitude.b_shadow_knee") return &p.camera.scene_latitude.b_shadow_knee;
     if (path == "camera.scene_latitude.b_shadow_room") return &p.camera.scene_latitude.b_shadow_room;
+    if (path == "settings.film_boost_reference_max") return &p.settings.film_boost_reference_max;
+    if (path == "settings.headroom_reference_max") return &p.settings.headroom_reference_max;
     if (path == "film_render.halation.scatter_amount") return &p.film_render.halation.scatter_amount;
     if (path == "film_render.grain.amount") return &p.film_render.grain.amount;
     if (path == "film_render.overscan.fog") return &p.film_render.overscan.fog;
@@ -281,6 +291,7 @@ double* float_slot(Params& p, const std::string& path) {
 
 bool* bool_slot(Params& p, const std::string& path) {
     if (path == "camera.auto_exposure") return &p.camera.auto_exposure;
+    if (path == "camera.auto_exposure_override_active") return &p.camera.auto_exposure_override_active;
     if (path == "film_render.halation.active") return &p.film_render.halation.active;
     if (path == "film_render.halation.antihalation_removed")
         return &p.film_render.halation.antihalation_removed;

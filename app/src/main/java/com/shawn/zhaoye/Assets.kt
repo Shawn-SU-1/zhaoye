@@ -21,7 +21,7 @@ object Assets {
 
     // android-2: assets/engine/fonts joined the unpack (the three DroidSans
     // faces the edge print is set in), so an installed copy must be redone.
-    private const val VERSION = "engine-1.4.0-android-2"
+    private const val VERSION = "engine-1.4.0-android-7-tiled-export"
 
     fun ensureEngine(context: Context): File {
         val root = File(context.filesDir, "engine")

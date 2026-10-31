@@ -7,14 +7,14 @@
 
 [简体中文](README.md) · **日本語** · [English](README.en.md)
 
-> **照夜 0.2.2 をダウンロード**
+> **照夜 0.2.4 をダウンロード**
 >
 > [GitHub Release](https://github.com/Shawn-SU-1/zhaoye/releases/latest) ·
 > [中国本土向け Lanzou Cloud ミラー（パスワード 23nt）](https://wwbjy.lanzouv.com/b0hebl34b) ·
 > [Baidu Netdisk（抽出コード h1ec）](https://pan.baidu.com/s/1f_aZvZQsR4no8KrLcxiJHQ?pwd=h1ec)
 >
 > Android 8.0 以上、Vulkan 1.1 対応の arm64 実機が必要です。GitHub Release が
-> 正式な `0.2.1` パッケージです。中国本土では Lanzou Cloud も利用できます。
+> 正式な `0.2.4` パッケージです。中国本土では Lanzou Cloud も利用できます。
 > アプリは起動時に更新を確認し、失敗しても編集を妨げません。
 
 同じ C++20 スペクトル現像エンジンを Vulkan compute でスマートフォン上に
@@ -115,7 +115,7 @@ NDK と LibRaw を探します。NDK と LibRaw はリポジトリに含みま�
 ## インストール
 
 [Releases](https://github.com/Shawn-SU-1/zhaoye/releases/latest) から
-`Zhaoye-0.2.2-arm64-v8a.apk` を取得するか、
+`Zhaoye-0.2.4-arm64-v8a.apk` を取得するか、
 [Lanzou Cloud](https://wwbjy.lanzouv.com/b0hebl34b)（パスワード `23nt`）を利用してください。
 [Baidu Netdisk](https://pan.baidu.com/s/1f_aZvZQsR4no8KrLcxiJHQ?pwd=h1ec)（抽出コード
 `h1ec`）も利用できます。
@@ -125,8 +125,8 @@ NDK と LibRaw を探します。NDK と LibRaw はリポジトリに含みま�
 `c4b5c76576838005bf90de0a55331341d9b3132e0ace0077a581385f3b43ca65`
 
 ```bash
-sha256sum Zhaoye-0.2.2-arm64-v8a.apk
-# 62a1893355fca82df05dedeb42857424b8c65574712974e6add1003cf16f144c
+sha256sum Zhaoye-0.2.4-arm64-v8a.apk
+# 5886102796c5699efce480eec6e0d56a83143d7aa10cf359adfd8df8ccc1c210
 ```
 
 以前の debug ビルドが入っている場合は、署名が異なるためアンインストールしてから

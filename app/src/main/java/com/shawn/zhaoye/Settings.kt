@@ -6,11 +6,17 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,7 +24,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -30,21 +38,37 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.launch
 
 private const val GITHUB = "https://github.com/Shawn-SU-1"
 private const val REPO = "https://github.com/Shawn-SU-1/zhaoye"
@@ -77,103 +101,157 @@ private val LIBS = listOf(
     "Zoomable" to "预览双指缩放与平移 · Apache-2.0",
 )
 
+private enum class SettingsPage(
+    val title: String,
+    val subtitle: String,
+) {
+    Root("设置", "照夜偏好、性能与系统信息"),
+    General("常规", "成片尺寸与实时预览"),
+    Performance("性能与跑分", "设备能力和 App 专用性能测试"),
+    Diagnostics("诊断与日志", "日志、设备和问题反馈"),
+    Updates("软件更新", "版本检查与国内下载入口"),
+    About("关于与许可", "作者、项目、上游与第三方组件"),
+}
+
 @Composable
 fun SettingsScreen(vm: DarkroomViewModel = viewModel(), onBack: () -> Unit) {
     val context = vm.getApplication<android.app.Application>()
+    val haptics = rememberZhaoyeHaptics()
+    val scope = rememberCoroutineScope()
+    val expansion = remember { Animatable(1f) }
+    val scrollState = rememberScrollState()
     var note by remember { mutableStateOf("") }
+    var page by rememberSaveable { mutableStateOf(SettingsPage.Root) }
+    var openOrigin by remember { mutableStateOf(Offset(0.5f, 0.2f)) }
+    val versionName = runCatching {
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName
+    }.getOrNull() ?: "?"
 
-    // Edge to edge is the default from target 35 on, so the background has to
-    // be painted before the insets are subtracted or the title ends up under
-    // the status bar.
+    fun closePage() {
+        if (page == SettingsPage.Root) {
+            onBack()
+        } else {
+            scope.launch {
+                expansion.animateTo(
+                    targetValue = 0.06f,
+                    animationSpec = tween(230, easing = FastOutSlowInEasing),
+                )
+                page = SettingsPage.Root
+                expansion.snapTo(1f)
+            }
+        }
+    }
+
+    BackHandler(enabled = page != SettingsPage.Root) {
+        closePage()
+    }
+
+    LaunchedEffect(page) { scrollState.scrollTo(0) }
+
+    // The title bar is deliberately outside the scroll container: like the
+    // system Settings app it stays put while the grouped controls move.
     Column(
         Modifier
             .fillMaxSize()
             .background(Ink)
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .verticalScroll(rememberScrollState()),
+            .navigationBarsPadding(),
     ) {
-        Row(
-            Modifier.fillMaxWidth().padding(start = 6.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回", tint = Bone)
-            }
-            Column(Modifier.weight(1f)) {
-                Text("设置", color = Bone, fontSize = 19.sp, fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.Serif)
-                Text("日志、导出尺寸与开源信息", color = Faint, fontSize = 10.sp)
-            }
-        }
-
-        Section("诊断")
-        Body("出问题的时候先导一份日志：里面是设备与内存、引擎能力、这次的每一条应用事件，以及引擎打印的 logcat。")
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Action("导出日志文件", Modifier.weight(1f)) {
-                note = share(context, vm)
-            }
-            Action("复制到剪贴板", Modifier.weight(1f)) {
-                val text = Diag.snapshot(context, vm.engineForDiag())
-                val clip = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                clip.setPrimaryClip(ClipData.newPlainText("照夜 诊断", text))
-                note = "已复制 ${text.length} 个字符"
-            }
-        }
-        if (note.isNotEmpty()) {
-            Text(note, color = Amber, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-        }
-        LinkRow("出问题了？去 GitHub 提 issue", "$REPO/issues/new/choose") {
-            open(context, "$REPO/issues/new/choose")
-        }
-
-        Divider()
-
-        Section("性能与实时预览")
-        KeyValue("设备", "${Build.MANUFACTURER} ${Build.MODEL}")
-        Body(
-            "照夜跑分只测试本 App 的真实渲染路径：800px 完整光谱冲印占 35%、" +
-                "800px 片边冲印占 25%、缓存重印占 15%、1600px 松手收尾占 15%，" +
-                "Vulkan 缓冲占 10%。" +
-                "测试片包含灰阶、彩块、棋盘高频纹理和噪声；不使用安兔兔或网络性能榜。",
+        SettingsTopBar(
+            title = page.title,
+            subtitle = page.subtitle,
+            onBack = {
+                haptics.perform(HapticCue.Selection)
+                closePage()
+            },
         )
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .background(Color(0xFF090807))
+                .graphicsLayer {
+                    scaleX = 0.06f + 0.94f * expansion.value
+                    scaleY = 0.06f + 0.94f * expansion.value
+                    alpha = 0.18f + 0.82f * expansion.value
+                    transformOrigin = TransformOrigin(openOrigin.x, openOrigin.y)
+                }
+                .verticalScroll(scrollState)
+                .padding(bottom = 24.dp),
         ) {
+
+        if (page == SettingsPage.Root) {
+            SettingsRootMenu(
+                version = versionName,
+                exportLabel = exportSizeLabel(vm.exportLongEdge),
+                realtime = vm.realtimePreviewEnabled,
+                benchmarkScore = vm.benchmarkScore,
+                hasUpdate = vm.updateInfo != null,
+                onOpen = { target, origin ->
+                    if (page == SettingsPage.Root) {
+                        openOrigin = origin
+                        scope.launch {
+                            expansion.snapTo(0.06f)
+                            page = target
+                            expansion.animateTo(
+                                targetValue = 1f,
+                                animationSpec = tween(300, easing = FastOutSlowInEasing),
+                            )
+                        }
+                    }
+                },
+            )
+        }
+
+        if (page == SettingsPage.Diagnostics) SettingsGroup("诊断") {
+            Body("出问题的时候先导一份日志：里面是设备与内存、引擎能力、这次的每一条应用事件，以及引擎打印的 logcat。")
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Action("导出日志文件", Modifier.weight(1f)) {
+                    note = share(context, vm)
+                }
+                Action("复制到剪贴板", Modifier.weight(1f)) {
+                    val text = Diag.snapshot(context, vm.engineForDiag())
+                    val clip = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clip.setPrimaryClip(ClipData.newPlainText("照夜 诊断", text))
+                    note = "已复制 ${text.length} 个字符"
+                }
+            }
+            if (note.isNotEmpty()) {
+                Text(
+                    note,
+                    color = Amber,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                )
+            }
+            LinkRow("出问题了？去 GitHub 提 issue", "$REPO/issues/new/choose") {
+                open(context, "$REPO/issues/new/choose")
+            }
+        }
+
+        if (page == SettingsPage.Performance) SettingsGroup("性能与实时预览") {
+            KeyValue("设备", "${Build.MANUFACTURER} ${Build.MODEL}")
+            Body(
+                "照夜跑分只测试本 App 的真实渲染路径：800px 完整光谱冲印占 35%、" +
+                    "800px 片边冲印占 25%、缓存重印占 15%、1600px 松手收尾占 15%，" +
+                    "Vulkan 缓冲占 10%。" +
+                    "测试片包含灰阶、彩块、棋盘高频纹理和噪声；不使用安兔兔或网络性能榜。",
+            )
             Action(
                 when {
                     vm.benchmarkRunning -> "测试中…"
                     vm.benchmarkScore != null -> "重新跑分"
                     else -> "运行照夜跑分"
                 },
-                Modifier.weight(1f),
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
             ) {
                 if (!vm.benchmarkRunning) vm.runBenchmark()
             }
-            Row(
-                Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(Panel)
-                    .padding(horizontal = 12.dp, vertical = 7.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text("实时预览", color = Bone, fontSize = 12.sp)
-                    Text("拖动时 800px 冲印", color = Faint, fontSize = 9.sp)
-                }
-                Switch(
-                    checked = vm.realtimePreviewEnabled,
-                    onCheckedChange = vm::setRealtimePreview,
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Ink,
-                        checkedTrackColor = Amber,
-                        uncheckedThumbColor = Faint,
-                        uncheckedTrackColor = Color(0xFF332C25),
-                    ),
-                )
-            }
-        }
         if (vm.benchmarkMessage.isNotEmpty()) {
             Text(
                 vm.benchmarkMessage,
@@ -251,21 +329,37 @@ fun SettingsScreen(vm: DarkroomViewModel = viewModel(), onBack: () -> Unit) {
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
                 )
             }
+            }
         }
 
-        Divider()
+        if (page == SettingsPage.General) SettingsGroup("实时预览") {
+            SettingsSwitchRow(
+                title = "拖动时实时冲印",
+                subtitle = if (vm.realtimePreviewEnabled) {
+                    "已开启 · 使用 800px 光谱预览"
+                } else {
+                    "已关闭 · 松手后再冲印"
+                },
+                checked = vm.realtimePreviewEnabled,
+                onCheckedChange = {
+                    haptics.perform(HapticCue.Selection)
+                    vm.setRealtimePreview(it)
+                },
+            )
+            Body("关闭后拖动参数时保留上一帧，可减少旧设备的实时渲染负担。")
+        }
 
-        Section("成片尺寸")
-        KeyValue(
-            "默认成片尺寸",
-            when (vm.exportLongEdge) {
-                0 -> "片源原尺寸（仅 RAW）"
-                3200 -> "标准 3200"
-                4800 -> "高清 4800"
-                6400 -> "大图 6400"
-                else -> vm.exportLongEdge.toString()
-            },
-        )
+        if (page == SettingsPage.General) SettingsGroup("成片尺寸") {
+            KeyValue(
+                "默认成片尺寸",
+                when (vm.exportLongEdge) {
+                    0 -> "片源原尺寸（仅 RAW）"
+                    3200 -> "标准 3200"
+                    4800 -> "高清 4800"
+                    6400 -> "大图 6400"
+                    else -> vm.exportLongEdge.toString()
+                },
+            )
         Body(
             "按成片较长的一边计算；数值越大，细节越多，文件也越大。" +
                 "这里只决定下一次保存或分享的尺寸，不会立即重绘当前预览。" +
@@ -278,33 +372,33 @@ fun SettingsScreen(vm: DarkroomViewModel = viewModel(), onBack: () -> Unit) {
                 "骁龙 888 这类手机 GPU 到 6400 以上有概率直接掉线（Vulkan 设备丢失）。" +
                 "掉线后 App 会自动重建引擎、把这一项退回 3200，换小的再试即可。",
         )
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Chip("标准 3200", vm.exportLongEdge == 3200, Modifier.weight(1f)) { vm.chooseExportLongEdge(3200) }
-            Chip("高清 4800", vm.exportLongEdge == 4800, Modifier.weight(1f)) { vm.chooseExportLongEdge(4800) }
-        }
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Chip("大图 6400", vm.exportLongEdge == 6400, Modifier.weight(1f)) { vm.chooseExportLongEdge(6400) }
-            Chip("片源原尺寸", vm.exportLongEdge == 0, Modifier.weight(1f)) { vm.chooseExportLongEdge(0) }
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Chip("标准 3200", vm.exportLongEdge == 3200, Modifier.weight(1f)) { vm.chooseExportLongEdge(3200) }
+                Chip("高清 4800", vm.exportLongEdge == 4800, Modifier.weight(1f)) { vm.chooseExportLongEdge(4800) }
+            }
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Chip("大图 6400", vm.exportLongEdge == 6400, Modifier.weight(1f)) { vm.chooseExportLongEdge(6400) }
+                Chip("片源原尺寸", vm.exportLongEdge == 0, Modifier.weight(1f)) { vm.chooseExportLongEdge(0) }
+            }
         }
 
-        Divider()
-
-        Section("软件更新")
-        KeyValue("当前版本", context.packageName + " " + (runCatching {
-            context.packageManager.getPackageInfo(context.packageName, 0).versionName
-        }.getOrNull() ?: "?"))
-        Body("每次打开 App 都会在后台检查 GitHub Release；没有更新或网络不可用时不会打扰编辑。")
-        Action(
-            if (vm.updateChecking) "正在检查…" else "检查更新",
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 6.dp),
-        ) {
-            if (!vm.updateChecking) vm.checkForUpdates(manual = true)
-        }
+        if (page == SettingsPage.Updates) SettingsGroup("软件更新") {
+            KeyValue("当前版本", context.packageName + " " + versionName)
+            Body("每次打开 App 都会在后台检查 GitHub Release；没有更新或网络不可用时不会打扰编辑。")
+            Action(
+                if (vm.updateChecking) "正在检查…" else "检查更新",
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+            ) {
+                if (!vm.updateChecking) vm.checkForUpdates(manual = true)
+            }
         if (vm.updateMessage.isNotEmpty()) {
             Text(
                 vm.updateMessage,
@@ -323,79 +417,269 @@ fun SettingsScreen(vm: DarkroomViewModel = viewModel(), onBack: () -> Unit) {
         LinkRow("百度网盘$updateSuffix · 提取码 h1ec", UpdateChecker.BAIDU_DOWNLOAD_URL) {
             open(context, UpdateChecker.BAIDU_DOWNLOAD_URL)
         }
-        LinkRow("GitHub Releases$updateSuffix", UpdateChecker.GITHUB_RELEASES_PAGE) {
-            open(context, UpdateChecker.GITHUB_RELEASES_PAGE)
-        }
-
-        Divider()
-
-        Section("关于")
-        KeyValue("版本", context.packageName + " " + (runCatching {
-            context.packageManager.getPackageInfo(context.packageName, 0).versionName
-        }.getOrNull() ?: "?"))
-        KeyValue("作者", "夢島千尋 / Shawn")
-        LinkRow("项目仓库", REPO) { open(context, REPO) }
-        LinkRow("GitHub 主页", GITHUB) { open(context, GITHUB) }
-        Body("不是滤镜，是冲印：光穿过胶片、在显影液里长出密度、再被相纸记录下来。")
-
-        Divider()
-
-        Section("名字")
-        Body(
-            "照夜，取自唐玄宗的名马「照夜白」——一身白毛，黑夜里也照得见。" +
-                "韩幹为它画过像，那张《照夜白图》今天还在大都会博物馆。",
-        )
-        Body(
-            "暗房也正是这样一间屋子：它黑着，得把光放进去，影才浮出来。" +
-                "这名字不是说要照亮照片，是说让一张底片在没有光的房间里，重新被照亮一次。",
-        )
-
-        Divider()
-
-        Section("上游与许可")
-        for (c in CREDITS) {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 6.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(Panel)
-                    .then(if (c.url != null) Modifier.clickable { open(context, c.url) } else Modifier)
-                    .padding(12.dp),
-            ) {
-                Text(c.name, color = Bone, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                Text(c.detail, color = Faint, fontSize = 11.sp, lineHeight = 16.sp)
-                if (c.url != null) Text(c.url, color = Amber, fontSize = 10.sp)
+            LinkRow("GitHub Releases$updateSuffix", UpdateChecker.GITHUB_RELEASES_PAGE) {
+                open(context, UpdateChecker.GITHUB_RELEASES_PAGE)
             }
         }
-        Body(
-            "本 App 是上面两位工作的衍生作品，按 GPL-3.0-or-later 分发；" +
-                "spektrafilm 的配置与 LUT 按 CC BY-SA 4.0 使用，修改已记录在仓库的 patches/ 目录。",
-        )
 
-        Divider()
+        if (page == SettingsPage.About) SettingsGroup("关于") {
+            KeyValue("版本", context.packageName + " " + versionName)
+            KeyValue("作者", "夢島千尋 / Shawn")
+            LinkRow("项目仓库", REPO) { open(context, REPO) }
+            LinkRow("GitHub 主页", GITHUB) { open(context, GITHUB) }
+            Body("不是滤镜，是冲印：光穿过胶片、在显影液里长出密度、再被相纸记录下来。")
+        }
 
-        Section("用到的第三方")
-        for ((name, what) in LIBS) KeyValue(name, what)
+        if (page == SettingsPage.About) SettingsGroup("名字") {
+            Body(
+                "照夜，取自唐玄宗的名马「照夜白」——一身白毛，黑夜里也照得见。" +
+                    "韩幹为它画过像，那张《照夜白图》今天还在大都会博物馆。",
+            )
+            Body(
+                "暗房也正是这样一间屋子：它黑着，得把光放进去，影才浮出来。" +
+                    "这名字不是说要照亮照片，是说让一张底片在没有光的房间里，重新被照亮一次。",
+            )
+        }
 
-        Text(
-            "日志不含照片内容，只有文件名、尺寸和耗时。",
-            color = Faint,
-            fontSize = 10.sp,
-            modifier = Modifier.padding(16.dp),
+        if (page == SettingsPage.About) SettingsGroup("上游与许可") {
+            for (c in CREDITS) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 6.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .then(if (c.url != null) Modifier.clickable { open(context, c.url) } else Modifier)
+                        .padding(12.dp),
+                ) {
+                    Text(c.name, color = Bone, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    Text(c.detail, color = Faint, fontSize = 11.sp, lineHeight = 16.sp)
+                    if (c.url != null) Text(c.url, color = Amber, fontSize = 10.sp)
+                }
+            }
+            Body(
+                "本 App 是上面两位工作的衍生作品，按 GPL-3.0-or-later 分发；" +
+                    "spektrafilm 的配置与 LUT 按 CC BY-SA 4.0 使用，修改已记录在仓库的 patches/ 目录。",
+            )
+        }
+
+        if (page == SettingsPage.About) SettingsGroup("用到的第三方") {
+            for ((name, what) in LIBS) KeyValue(name, what)
+        }
+
+        if (page == SettingsPage.About) {
+            Text(
+                "日志不含照片内容，只有文件名、尺寸和耗时。",
+                color = Faint,
+                fontSize = 10.sp,
+                modifier = Modifier.padding(16.dp),
+            )
+        }
+    }
+}
+}
+
+@Composable
+private fun SettingsTopBar(
+    title: String,
+    subtitle: String,
+    onBack: () -> Unit,
+) {
+    Column(Modifier.fillMaxWidth().background(Ink).statusBarsPadding()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .height(62.dp)
+                .padding(start = 6.dp, end = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "返回",
+                    tint = Bone,
+                )
+            }
+            Column(Modifier.weight(1f)) {
+                Text(
+                    title,
+                    color = Bone,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = FontFamily.Serif,
+                )
+                Text(subtitle, color = Faint, fontSize = 10.sp)
+            }
+        }
+        HorizontalDivider(color = Edge)
+    }
+}
+
+@Composable
+private fun SettingsRootMenu(
+    version: String,
+    exportLabel: String,
+    realtime: Boolean,
+    benchmarkScore: Int?,
+    hasUpdate: Boolean,
+    onOpen: (SettingsPage, Offset) -> Unit,
+) {
+    SettingsGroup("编辑") {
+        SettingsMenuRow(
+            icon = Icons.Default.Save,
+            title = "常规",
+            subtitle = "$exportLabel · 实时预览${if (realtime) "已开启" else "已关闭"}",
+        ) { origin -> onOpen(SettingsPage.General, origin) }
+    }
+    SettingsGroup("系统") {
+        SettingsMenuRow(
+            icon = Icons.Default.Tune,
+            title = "性能与跑分",
+            subtitle = benchmarkScore?.let { "当前 ${it}/100 · 重新测试渲染能力" }
+                ?: "测试这台手机的照夜渲染性能",
+        ) { origin -> onOpen(SettingsPage.Performance, origin) }
+        MenuDivider()
+        SettingsMenuRow(
+            icon = Icons.Default.Build,
+            title = "诊断与日志",
+            subtitle = "导出诊断文件、复制日志或反馈问题",
+        ) { origin -> onOpen(SettingsPage.Diagnostics, origin) }
+    }
+    SettingsGroup("软件") {
+        SettingsMenuRow(
+            icon = Icons.Default.Refresh,
+            title = "软件更新",
+            subtitle = if (hasUpdate) "发现可用新版本" else "当前版本 $version",
+        ) { origin -> onOpen(SettingsPage.Updates, origin) }
+        MenuDivider()
+        SettingsMenuRow(
+            icon = Icons.Default.Info,
+            title = "关于与许可",
+            subtitle = "作者、项目仓库、上游与第三方组件",
+        ) { origin -> onOpen(SettingsPage.About, origin) }
+    }
+}
+
+@Composable
+private fun SettingsMenuRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: (Offset) -> Unit,
+) {
+    val haptics = rememberZhaoyeHaptics()
+    val view = LocalView.current
+    var center by remember { mutableStateOf(Offset(0.5f, 0.2f)) }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .onGloballyPositioned { coordinates ->
+                val bounds = coordinates.boundsInRoot()
+                val width = view.width.coerceAtLeast(1)
+                val height = view.height.coerceAtLeast(1)
+                center = Offset(
+                    (bounds.center.x / width).coerceIn(0f, 1f),
+                    (bounds.center.y / height).coerceIn(0f, 1f),
+                )
+            }
+            .clickable {
+                haptics.perform(HapticCue.Selection)
+                onClick(center)
+            }
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .size(38.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(Color(0xFF292521)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(icon, contentDescription = null, tint = Faint, modifier = Modifier.size(20.dp))
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, color = Bone, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            Text(
+                subtitle,
+                color = Faint,
+                fontSize = 11.sp,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+        }
+        Text("›", color = Faint, fontSize = 23.sp)
+    }
+}
+
+@Composable
+private fun SettingsSwitchRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, color = Bone, fontSize = 14.sp)
+            Text(subtitle, color = Faint, fontSize = 11.sp)
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Ink,
+                checkedTrackColor = Amber,
+                uncheckedThumbColor = Faint,
+                uncheckedTrackColor = Color(0xFF332C25),
+            ),
         )
     }
 }
 
 @Composable
-private fun Section(title: String) {
-    Text(
-        title,
-        color = Amber,
-        fontSize = 12.sp,
-        fontWeight = FontWeight.Medium,
-        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 6.dp),
+private fun MenuDivider() {
+    HorizontalDivider(
+        color = Edge.copy(alpha = 0.55f),
+        modifier = Modifier.padding(start = 64.dp),
     )
+}
+
+private fun exportSizeLabel(edge: Int): String = when (edge) {
+    0 -> "片源原尺寸"
+    3200 -> "标准 3200"
+    4800 -> "高清 4800"
+    6400 -> "大图 6400"
+    else -> edge.toString()
+}
+
+@Composable
+private fun SettingsGroup(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(Modifier.fillMaxWidth().padding(top = 18.dp)) {
+        Text(
+            title,
+            color = Amber,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(Panel)
+                .border(1.dp, Edge, RoundedCornerShape(14.dp))
+                .padding(vertical = 4.dp),
+            content = content,
+        )
+    }
 }
 
 @Composable
@@ -405,21 +689,13 @@ private fun Body(text: String) {
         color = Faint,
         fontSize = 11.sp,
         lineHeight = 16.sp,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-    )
-}
-
-@Composable
-private fun Divider() {
-    HorizontalDivider(
-        color = Edge,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+        modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp),
     )
 }
 
 @Composable
 private fun KeyValue(key: String, value: String) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 3.dp)) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)) {
         Text(key, color = Faint, fontSize = 11.sp, modifier = Modifier.weight(1f))
         Text(value, color = Bone, fontSize = 11.sp)
     }
@@ -427,26 +703,28 @@ private fun KeyValue(key: String, value: String) {
 
 @Composable
 private fun LinkRow(label: String, url: String, onClick: () -> Unit) {
+    val haptics = rememberZhaoyeHaptics()
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(Panel)
-            .clickable { onClick() }
-            .padding(12.dp),
+            .clickable {
+                haptics.perform(HapticCue.Selection)
+                onClick()
+            }
+            .padding(horizontal = 14.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
             Text(label, color = Bone, fontSize = 13.sp, fontWeight = FontWeight.Medium)
             Text(url, color = Amber, fontSize = 10.sp)
         }
-        Text("打开", color = Faint, fontSize = 10.sp)
+        Text("›", color = Faint, fontSize = 22.sp)
     }
 }
 
 @Composable
 private fun Action(label: String, modifier: Modifier, onClick: () -> Unit) {
+    val haptics = rememberZhaoyeHaptics()
     Text(
         label,
         color = Ink,
@@ -454,7 +732,10 @@ private fun Action(label: String, modifier: Modifier, onClick: () -> Unit) {
         modifier = modifier
             .clip(RoundedCornerShape(10.dp))
             .background(Amber)
-            .clickable { onClick() }
+            .clickable {
+                haptics.perform(HapticCue.Selection)
+                onClick()
+            }
             .padding(vertical = 11.dp),
         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
     )
@@ -462,6 +743,7 @@ private fun Action(label: String, modifier: Modifier, onClick: () -> Unit) {
 
 @Composable
 private fun Chip(label: String, on: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val haptics = rememberZhaoyeHaptics()
     Text(
         label,
         color = if (on) Ink else Bone,
@@ -469,7 +751,10 @@ private fun Chip(label: String, on: Boolean, modifier: Modifier, onClick: () -> 
         modifier = modifier
             .clip(RoundedCornerShape(10.dp))
             .background(if (on) Amber else Panel)
-            .clickable { onClick() }
+            .clickable {
+                if (!on) haptics.perform(HapticCue.Selection)
+                onClick()
+            }
             .padding(vertical = 11.dp),
         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
     )

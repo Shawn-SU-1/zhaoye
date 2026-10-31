@@ -319,6 +319,11 @@ bool is_known_camera_filter(const std::string& name);
 struct CameraParams {
     double exposure_compensation_ev = 0.0;
     bool auto_exposure = true;
+    // Source tiling runs one film render per crop. Keep the auto-exposure node
+    // on its normal path, but inject the whole-frame EV measured by a safe
+    // preview so every tile exposes identically.
+    bool auto_exposure_override_active = false;
+    double auto_exposure_override_ev = 0.0;
     /// Which exposure intent the meter follows (RFC-015 §2.3). The default is
     /// the reference's own, and it stays: three of the seven names are the
     /// legacy meters, whose arithmetic the parity harnesses pin.
@@ -481,6 +486,15 @@ struct SettingsParams {
     bool striped = false;              ///< run the striped executor at all
     int strip_rows = 0;                ///< 0 = let `choose_strip_height` decide
     int strip_budget_bytes = 0;        ///< accepted, recorded, varies nothing yet (§7)
+
+    // Source-level tiling is the app's fallback for GPUs that cannot dispatch
+    // a full-resolution frame safely. Two film nodes are image-global
+    // reductions (`node_boost` and `node_headroom`); on a cropped source tile
+    // their local maximum moves the picture. A tiled export first measures
+    // those two maxima on the whole frame and supplies them here. Zero keeps
+    // the ordinary per-render reduction, so a normal export is unchanged.
+    double film_boost_reference_max = 0.0;
+    double headroom_reference_max = 0.0;
 };
 
 struct DebugParams {

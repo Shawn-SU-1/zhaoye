@@ -15,9 +15,14 @@
 
 #include "volk.h"
 
+#if defined(__ANDROID__)
+#include <android/log.h>
+#endif
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdarg>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -57,6 +62,18 @@ constexpr size_t kDirectUploadBytes = 32u << 20;
 
 std::string vk_error(const char* operation, VkResult result) {
     return std::string(operation) + " failed (VkResult " + std::to_string(int(result)) + ")";
+}
+
+void diagnostic_log(const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+#if defined(__ANDROID__)
+    __android_log_vprint(ANDROID_LOG_INFO, "ZhaoyeVulkan", format, args);
+#else
+    std::vfprintf(stderr, format, args);
+    std::fputc('\n', stderr);
+#endif
+    va_end(args);
 }
 
 struct KernelSpec { const char* name; uint32_t bindings; uint32_t workgroup; };
@@ -555,6 +572,19 @@ public:
             error = "Vulkan dispatch exceeds maxComputeWorkGroupCount";
             return false;
         }
+        const bool trace_dispatch = n_threads >= (1u << 20);
+        const auto dispatch_started = Clock::now();
+        size_t largest_arg = 0;
+        if (trace_dispatch) {
+            for (const Arg& arg : args) {
+                if (arg.buffer) largest_arg = std::max(largest_arg, size_t(arg.buffer->bytes));
+                else largest_arg = std::max(largest_arg, arg.size);
+            }
+            diagnostic_log(
+                "dispatch begin kernel=%s threads=%zu groups=%zu grid=%zux%zu "
+                "largest_arg_bytes=%zu",
+                kernel, n_threads, groups, groups_x, groups_y, largest_arg);
+        }
         // Inline uploads submit transfers too. Resolve them before taking the
         // non-recursive queue/command-pool lock; their BufferRefs stay live
         // through completion of the dispatch below.
@@ -616,11 +646,23 @@ public:
                 device_barrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                                VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
                 vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline->pipeline);
-                vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline->layout,
-                                        0, 1, &set, 0, nullptr);
+                vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE,
+                                        pipeline->layout, 0, 1, &set, 0, nullptr);
                 vkCmdDispatch(command, uint32_t(groups_x), uint32_t(groups_y), 1);
             }, "Vulkan compute dispatch", error);
         vkDestroyDescriptorPool(device_, descriptor_pool, nullptr);
+        if (trace_dispatch) {
+            const double elapsed_ms = std::chrono::duration<double, std::milli>(
+                Clock::now() - dispatch_started).count();
+            const PoolStats pool = pool_stats();
+            diagnostic_log(
+                "dispatch end kernel=%s ok=%d elapsed_ms=%.3f "
+                "pool_live_bytes=%zu pool_free_bytes=%zu pool_total_bytes=%zu "
+                "live_buffers=%zu free_buffers=%zu error=%s",
+                kernel, submitted ? 1 : 0, elapsed_ms, pool.live_bytes, pool.free_bytes,
+                pool.total_bytes, pool.live_buffers, pool.free_buffers,
+                submitted ? "" : error.c_str());
+        }
         return submitted;
     }
 

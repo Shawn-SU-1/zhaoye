@@ -7,13 +7,13 @@
 
 **简体中文** · [日本語](README.ja.md) · [English](README.en.md)
 
-> **下载照夜 0.2.2**
+> **下载照夜 0.2.4**
 >
 > [GitHub 正式版](https://github.com/Shawn-SU-1/zhaoye/releases/latest) ·
 > [蓝奏云国内快速下载（密码 23nt）](https://wwbjy.lanzouv.com/b0hebl34b) ·
 > [百度网盘（提取码 h1ec）](https://pan.baidu.com/s/1f_aZvZQsR4no8KrLcxiJHQ?pwd=h1ec)
 >
-> Android 8.0 以上、支持 Vulkan 1.1 的 arm64 真机。GitHub Release 是正式 `0.2.1` 发布包；
+> Android 8.0 以上、支持 Vulkan 1.1 的 arm64 真机。GitHub Release 是正式 `0.2.4` 发布包；
 > 国内网络可优先使用蓝奏云。App 每次启动也会自动检查新版本，失败时不会影响编辑。
 
 安卓暗房：同一份 C++20 光谱冲印引擎，用 Vulkan compute 在手机上跑，
@@ -144,7 +144,7 @@ x86 模拟器跑不了，真机需要 Vulkan 1.1 以上。
 ### 直接装
 
 到 [Releases](https://github.com/Shawn-SU-1/zhaoye/releases/latest) 取
-`Zhaoye-0.2.2-arm64-v8a.apk`（30.1 MB），在手机上打开安装。国内网络可使用
+`Zhaoye-0.2.4-arm64-v8a.apk`（30.1 MB），在手机上打开安装。国内网络可使用
 [蓝奏云（密码 23nt）](https://wwbjy.lanzouv.com/b0hebl34b) 或
 [百度网盘（提取码 h1ec）](https://pan.baidu.com/s/1f_aZvZQsR4no8KrLcxiJHQ?pwd=h1ec)。
 这是侧载，系统会问一次
@@ -152,8 +152,8 @@ x86 模拟器跑不了，真机需要 Vulkan 1.1 以上。
 `c4b5c76576838005bf90de0a55331341d9b3132e0ace0077a581385f3b43ca65`；apk 自身的校验值：
 
 ```bash
-sha256sum Zhaoye-0.2.2-arm64-v8a.apk
-# 62a1893355fca82df05dedeb42857424b8c65574712974e6add1003cf16f144c
+sha256sum Zhaoye-0.2.4-arm64-v8a.apk
+# 5886102796c5699efce480eec6e0d56a83143d7aa10cf359adfd8df8ccc1c210
 ```
 
 以前在本地装过 debug 版的，**先卸载再装**：签名不同，覆盖安装会被系统拒绝。

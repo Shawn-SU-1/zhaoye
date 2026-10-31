@@ -24,6 +24,7 @@ object Engine {
     external fun nativeDestroy(handle: Long)
     external fun nativeLastError(handle: Long): String
     external fun nativeCapabilities(handle: Long): String
+    external fun nativeMemoryReport(handle: Long): String
     external fun nativeParamsSchema(handle: Long): String
     external fun nativeBuildInfo(): String
 
@@ -50,6 +51,8 @@ object Engine {
 
     external fun nativeSetParams(handle: Long, deltaJson: String): String
     external fun nativeGetParams(handle: Long): String
+    external fun nativeProgressPercent(handle: Long): Double
+    external fun nativeProgressJson(handle: Long): String
 
     /** Header (int32 width, int32 height) followed by RGBA8 pixels. */
     external fun nativeRender(handle: Long, tier: String, fullRender: Boolean): ByteArray?
@@ -61,6 +64,7 @@ class EngineHandle private constructor(private val handle: Long) {
     val isReady: Boolean get() = handle != 0L
     val lastError: String get() = if (handle == 0L) "engine not created" else Engine.nativeLastError(handle)
     val capabilities: String get() = if (handle == 0L) "{}" else Engine.nativeCapabilities(handle)
+    val memoryReport: String get() = if (handle == 0L) "{}" else Engine.nativeMemoryReport(handle)
 
     companion object {
         fun create(resourcesDir: String): EngineHandle {
@@ -108,6 +112,9 @@ class Session internal constructor(private val engine: Long, private val handle:
     fun setParams(deltaJson: String): String = Engine.nativeSetParams(handle, deltaJson)
 
     fun params(): String = Engine.nativeGetParams(handle)
+    fun progressPercent(): Float =
+        Engine.nativeProgressPercent(handle).toFloat().coerceIn(0f, 100f)
+    fun progressJson(): String = Engine.nativeProgressJson(handle)
 
     /**
      * @param fullRender true runs the whole press again (`spk_render`), false

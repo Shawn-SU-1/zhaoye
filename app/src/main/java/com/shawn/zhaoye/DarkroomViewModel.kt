@@ -2,9 +2,12 @@ package com.shawn.zhaoye
 
 import android.app.Application
 import android.content.Context
+import android.graphics.Canvas
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Rect
 import android.net.Uri
 import android.util.Log
 import android.widget.Toast
@@ -15,17 +18,35 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import org.json.JSONTokener
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.math.ln
+import kotlin.math.max
 import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 
 /** Where a finished print goes: the gallery, or straight out to another app. */
 enum class ExportTarget { Gallery, Share }
+
+data class ExportEstimate(
+    val width: Int,
+    val height: Int,
+    val bytes: Long,
+)
+
+data class ExportProgressUi(
+    val percent: Int,
+    val stage: String,
+    val estimate: ExportEstimate,
+)
 
 /**
  * Owns the engine, the current session and the darkroom settings.
@@ -253,6 +274,13 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
      */
     var exportLongEdge by mutableStateOf(3200)
 
+    /** Non-null only while an export is running or finishing its save animation. */
+    var exportProgress by mutableStateOf<ExportProgressUi?>(null)
+        private set
+
+    /** ADB-only test hook; the normal UI never changes this. */
+    var debugForceTiledExport by mutableStateOf(false)
+
     fun engineForDiag(): EngineHandle? = engine
 
     /** A no-op when the launch check is already in flight. */
@@ -390,6 +418,82 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
         persist()
     }
 
+    private var cachedEstimatePreview: Bitmap? = null
+    private var cachedPreviewJpegBytes = 0L
+
+    private fun previewJpegBytes(bitmap: Bitmap): Long {
+        if (cachedEstimatePreview === bitmap) return cachedPreviewJpegBytes
+        cachedPreviewJpegBytes = runCatching {
+            ByteArrayOutputStream().use { output ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 95, output)
+                output.size().toLong()
+            }
+        }.getOrDefault(0L)
+        cachedEstimatePreview = bitmap
+        return cachedPreviewJpegBytes
+    }
+
+    /**
+     * Predicts the saved image's pixel dimensions and JPEG size. Dimensions
+     * come from the source aspect plus the live overscan canvas; bytes come
+     * from a q95 compression of the current preview, scaled for the extra
+     * detail a full-resolution render resolves. The UI labels it "about".
+     */
+    fun estimateExport(requestedLongEdge: Int): ExportEstimate {
+        val bitmap = preview
+        val sourceW = frameW.takeIf { it > 0 } ?: bitmap?.width ?: 0
+        val sourceH = frameH.takeIf { it > 0 } ?: bitmap?.height ?: 0
+        if (sourceW <= 0 || sourceH <= 0) return ExportEstimate(0, 0, 0L)
+
+        val isRawInput = lastFile?.let(::isRaw) == true
+        val requested = if (requestedLongEdge == 0 && !isRawInput) 3200 else requestedLongEdge
+        val sourceLong = max(sourceW, sourceH)
+        val baseLong = if (requested == 0) sourceLong else minOf(requested, sourceLong)
+        if (baseLong <= 0) return ExportEstimate(0, 0, 0L)
+
+        val previewAspect = bitmap?.let { it.width.toDouble() / it.height }
+        val sourceAspect = sourceW.toDouble() / sourceH
+        val outputAspect = if (overscanOn && previewAspect != null) previewAspect else sourceAspect
+        val overscanScale = if (overscanOn && bitmap != null) {
+            val previewLong = max(bitmap.width, bitmap.height).toDouble()
+            val targetPreviewLong = minOf(1600, sourceLong).coerceAtLeast(1).toDouble()
+            (previewLong / targetPreviewLong).takeIf { it in 0.75..1.45 } ?: 1.045
+        } else {
+            1.0
+        }
+        val outputLong = (baseLong * overscanScale).roundToInt().coerceAtLeast(1)
+        val outputW = if (outputAspect >= 1.0) {
+            outputLong
+        } else {
+            (outputLong * outputAspect).roundToInt().coerceAtLeast(1)
+        }
+        val outputH = if (outputAspect >= 1.0) {
+            (outputLong / outputAspect).roundToInt().coerceAtLeast(1)
+        } else {
+            outputLong
+        }
+
+        val outputPixels = outputW.toLong() * outputH.toLong()
+        val previewJpeg = bitmap?.let(::previewJpegBytes) ?: 0L
+        val previewPixels = bitmap?.let { it.width.toLong() * it.height.toLong() } ?: 0L
+        val estimatedBytes = if (previewJpeg > 0 && previewPixels > 0) {
+            val pixelScale = outputPixels.toDouble() / previewPixels.toDouble()
+            val scalePower = (ln(pixelScale.coerceAtLeast(1.0)) / ln(2.0)).coerceAtLeast(0.0)
+            val resolutionFactor = if (overscanOn) {
+                1.90 + 0.38 * scalePower
+            } else {
+                (1.0 - 0.08 * scalePower).coerceAtLeast(0.48)
+            }
+            val rawBytes = previewJpeg.toDouble() * pixelScale * resolutionFactor
+            val bitsPerPixel = (rawBytes * 8.0 / outputPixels).coerceIn(0.45, 3.60)
+            (outputPixels * bitsPerPixel / 8.0).roundToLong().coerceAtLeast(32L * 1024L)
+        } else {
+            val bitsPerPixel = if (overscanOn) 2.0 else 1.15
+            (outputPixels * bitsPerPixel / 8.0).roundToLong().coerceAtLeast(32L * 1024L)
+        }
+        return ExportEstimate(outputW, outputH, estimatedBytes)
+    }
+
     init {
         restore()
         viewModelScope.launch {
@@ -426,6 +530,13 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
         lastUri = null
         hasFrame = true
         val raw = isRaw(file)
+        if (!raw) {
+            sourceDimensions(file)?.let { (w, h) ->
+                frameW = w
+                frameH = h
+                lastSourceEdge = maxOf(w, h)
+            }
+        }
         viewModelScope.launch {
             say(if (raw) "解开 RAW…" else "读入底片…")
             applyShootDate(withContext(Dispatchers.IO) { shootMillis(file, null) })
@@ -530,8 +641,10 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         val bitmap = withContext(Dispatchers.IO) { decodeFile(file, longEdge) } ?: return null
-        frameW = bitmap.width
-        frameH = bitmap.height
+        if (frameW <= 0 || frameH <= 0) {
+            frameW = bitmap.width
+            frameH = bitmap.height
+        }
         if (remember) originalPreview = bitmap
         return withContext(native) {
             val opened =
@@ -545,6 +658,28 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
         getApplication<Application>().contentResolver.query(
             uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null,
         )?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+    }.getOrNull()
+
+    private fun sourceDimensions(file: File): Pair<Int, Int>? = runCatching {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        if (bounds.outWidth > 0 && bounds.outHeight > 0) {
+            bounds.outWidth to bounds.outHeight
+        } else {
+            null
+        }
+    }.getOrNull()
+
+    private fun sourceDimensions(uri: Uri): Pair<Int, Int>? = runCatching {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        getApplication<Application>().contentResolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, bounds)
+        }
+        if (bounds.outWidth > 0 && bounds.outHeight > 0) {
+            bounds.outWidth to bounds.outHeight
+        } else {
+            null
+        }
     }.getOrNull()
 
     /** LibRaw wants a path, so a picked RAW is copied out of the content:// URI first. */
@@ -578,6 +713,11 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
             lastFile = null
             hasFrame = true
             rawReport = ""
+            sourceDimensions(uri)?.let { (w, h) ->
+                frameW = w
+                frameH = h
+                lastSourceEdge = maxOf(w, h)
+            }
             val handle = engine
             if (handle == null) {
                 say("引擎还没就绪")
@@ -594,9 +734,11 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
             // path set these two on open; the picker path did not, so a photo
             // opened from 相册 could not use the frame edge at all.
             if (bitmap != null) {
-                frameW = bitmap.width
-                frameH = bitmap.height
-                lastSourceEdge = maxOf(bitmap.width, bitmap.height)
+                if (frameW <= 0 || frameH <= 0) {
+                    frameW = bitmap.width
+                    frameH = bitmap.height
+                    lastSourceEdge = maxOf(bitmap.width, bitmap.height)
+                }
             }
             session?.let { s -> withContext(native) { s.close() } }
             session = null
@@ -958,8 +1100,6 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
             } else {
                 val frame = withContext(Dispatchers.IO) { decode(getApplication(), uri!!, 3400) }
                 frame?.let {
-                    frameW = it.width
-                    frameH = it.height
                     withContext(native) {
                         handle.open(
                             it.toIngestPixels(),
@@ -1020,8 +1160,6 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
             } else {
                 val frame = withContext(Dispatchers.IO) { decode(getApplication(), uri!!, 1600) }
                 frame?.let {
-                    frameW = it.width
-                    frameH = it.height
                     withContext(native) {
                         handle.open(
                             it.toIngestPixels(),
@@ -1334,7 +1472,10 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
         }
         viewModelScope.launch {
             busy = true
+            val estimate = estimateExport(exportLongEdge)
+            exportProgress = ExportProgressUi(0, "准备底片", estimate)
             say("按原图重新冲印…")
+            try {
             val handle = engine
             if (handle == null) {
                 say("引擎还没就绪")
@@ -1374,6 +1515,8 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
                 busy = false
                 return@launch
             }
+            Diag.log("GPU", "source export memory before render: ${handle.memoryReport}")
+            exportProgress = ExportProgressUi(8, "准备冲印", estimate)
             val started = System.currentTimeMillis()
             // `preview` renders at 3400 (the tier the app was built around);
             // a request for the source's own size has to ask for `full`, or the
@@ -1383,14 +1526,88 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
             // 3400 px `preview` tier, or the long decode is thrown away.
             val tier = if (target == 0 || target > 3400) "full" else "preview"
             var failure = ""
-            val out = withContext(native) {
-                opened.setParams(delta().toString())
-                val rendered = opened.render(tier, true)
-                // Thread-local error: read it before leaving this thread.
-                if (rendered == null) failure = handle.lastError.orEmpty()
-                opened.close()
-                rendered
+            val targetEstimate = estimateExport(target)
+            val estimatedPixels =
+                targetEstimate.width.toLong() * targetEstimate.height.toLong()
+            val largeSource = (file?.let(::isRaw) == true || debugForceTiledExport) &&
+                (target == 0 || estimatedPixels > 16_000_000L)
+            val outputWidth: Int
+            val outputHeight: Int
+            if (target == 0) {
+                outputWidth = frameW
+                outputHeight = frameH
+            } else if (frameW >= frameH) {
+                outputWidth = target
+                outputHeight = (target * frameH.toDouble() / frameW).roundToInt()
+            } else {
+                outputHeight = target
+                outputWidth = (target * frameW.toDouble() / frameH).roundToInt()
             }
+            val baseExportParams = delta()
+            var tiled = if (largeSource) {
+                renderSourceTiled(
+                    handle,
+                    file,
+                    opened,
+                    baseExportParams,
+                    outputWidth,
+                    outputHeight,
+                ) { percent, stage ->
+                    exportProgress = ExportProgressUi(percent, stage, estimate)
+                }
+            } else {
+                val renderTask = async(native) {
+                    opened.setParams(baseExportParams.toString())
+                    val bitmap = opened.render(tier, true)
+                    // Thread-local error: read it before leaving this thread.
+                    if (bitmap == null) failure = handle.lastError.orEmpty()
+                    bitmap
+                }
+                val renderStarted = System.currentTimeMillis()
+                while (!renderTask.isCompleted) {
+                    delay(120)
+                    val raw = opened.progressPercent()
+                    val elapsed = System.currentTimeMillis() - renderStarted
+                    val percent = if (raw > 0f) {
+                        (10f + raw * 0.80f).roundToInt()
+                    } else {
+                        (10f + elapsed / 250f).roundToInt().coerceAtMost(18)
+                    }.coerceIn(10, 90)
+                    exportProgress = ExportProgressUi(percent, "冲印中", estimate)
+                }
+                val rendered = renderTask.await()
+                val renderProgress = runCatching { JSONObject(opened.progressJson()) }
+                    .getOrDefault(JSONObject())
+                Diag.log(
+                    "EXPORT",
+                    "whole render auto_exposure_ev=" +
+                        (if (renderProgress.isNull("auto_exposure_ev")) {
+                            "null"
+                        } else {
+                            renderProgress.optDouble("auto_exposure_ev", 0.0).toString()
+                        }),
+                )
+                rendered to failure
+            }
+            if (largeSource && overscanOn && tiled.first != null && file != null) {
+                exportProgress = ExportProgressUi(88, "准备片边", estimate)
+                val template = renderOverscanTemplate(handle, file, baseExportParams)
+                if (template.first != null) {
+                    exportProgress = ExportProgressUi(93, "合成片边", estimate)
+                    val composed = withContext(Dispatchers.Default) {
+                        composeFullOverscan(tiled.first!!, template.first!!)
+                    }
+                    tiled.first?.recycle()
+                    template.first?.recycle()
+                    tiled = composed
+                } else {
+                    tiled.first?.recycle()
+                    tiled = template
+                }
+            }
+            val out = tiled.first
+            failure = tiled.second
+            withContext(native) { opened.close() }
             Diag.log(
                 "R",
                 "export long-edge=${if (target == 0) "source" else target.toString()} " +
@@ -1399,6 +1616,7 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
             )
             if (out == null) {
                 val message = failure
+                Diag.log("GPU", "source export failed; memory after render: ${handle.memoryReport}")
                 if (message.contains("VkResult -4") || message.contains("device lost", true)) {
                     // A lost Vulkan device poisons the engine that owned it:
                     // every later dispatch fails the same way. Say which size
@@ -1412,7 +1630,7 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
                     // edge alone gives a figure close enough to name the wall.
                     val mp = if (edge > 0) "（约 ${edge * edge / 1_500_000} MP）" else ""
                     recoverEngine(
-                        "GPU 掉线了：${size}${mp}超出这台手机的显存。已重建引擎，导出长边退回 3200。",
+                        "GPU 掉线了：${size}${mp}触发了显卡驱动限制或长任务超时。已重建引擎，导出长边退回 3200。",
                     )
                     busy = false
                     return@launch
@@ -1423,6 +1641,7 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
                 return@launch
             }
             if (to == ExportTarget.Share) {
+                exportProgress = ExportProgressUi(96, "写入成片", estimate)
                 // The bitmap goes to cacheDir and leaves through the app's own
                 // FileProvider: a share target cannot read another app's
                 // files, and a MediaStore uri would also put the print in the
@@ -1438,14 +1657,316 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
                     !shared,
                 )
             } else {
+                exportProgress = ExportProgressUi(96, "写入相册", estimate)
                 val saved = withContext(Dispatchers.IO) { Assets.saveToGallery(getApplication(), out) }
                 say(if (saved != null) "已存入相册：$saved" else "写入相册失败", saved == null)
             }
             announce(status)
             onDone(status)
+            exportProgress = ExportProgressUi(100, "已完成", estimate)
+            delay(650)
             busy = false
+            } finally {
+                exportProgress = null
+                busy = false
+            }
         }
     }
+
+    /**
+     * Source-size RAW output goes through overlapping horizontal bands. The
+     * overlap is discarded before stitching, so convolution tails and glow
+     * cross each seam without a visible hard edge. Other export tiers keep
+     * using the original whole-frame path.
+     */
+    private suspend fun renderSourceTiled(
+        handle: EngineHandle,
+        file: java.io.File?,
+        opened: Session,
+        baseParams: JSONObject,
+        width: Int,
+        height: Int,
+        onProgress: (Int, String) -> Unit,
+    ): Pair<Bitmap?, String> = withContext(native) {
+        if (width <= 0 || height <= 0) return@withContext null to "片源尺寸未知"
+        val halo = 160
+        onProgress(4, "全局测光")
+        val meterParams = JSONObject(baseParams.toString()).apply {
+            put("overscan_active", false)
+            put("date_imprint_active", false)
+            put("geometry_crop_x", 0.0)
+            put("geometry_crop_y", 0.0)
+            put("geometry_crop_w", 1.0)
+            put("geometry_crop_h", 1.0)
+        }
+        // Use a fresh 3200 px session as the whole-frame reference. Asking the
+        // source-size session for a 3400 preview reuses that session's
+        // full-resolution decode, which can respond differently from a normal
+        // 3200 export. A separate safe session keeps every export size on the
+        // same visible tone and colour target.
+        val referenceSession = file?.let { openSession(handle, it, 3200, remember = false) }
+        val meterSource = referenceSession ?: opened
+        val meterFrame: Bitmap
+        val progress: JSONObject
+        try {
+            meterSource.setParams(meterParams.toString())
+            meterFrame = meterSource.render("preview", true)
+                ?: return@withContext null to meterSource.engineError()
+            progress = runCatching { JSONObject(meterSource.progressJson()) }
+                .getOrDefault(JSONObject())
+        } finally {
+            referenceSession?.close()
+        }
+        val meterSample = Bitmap.createScaledBitmap(meterFrame, 64, 64, true)
+        val meterPixels = IntArray(64 * 64)
+        meterSample.getPixels(meterPixels, 0, 64, 0, 0, 64, 64)
+        val meterMean = DoubleArray(3)
+        for (pixel in meterPixels) {
+            meterMean[0] += (pixel shr 16) and 0xFF
+            meterMean[1] += (pixel shr 8) and 0xFF
+            meterMean[2] += pixel and 0xFF
+        }
+        for (c in 0..2) meterMean[c] /= meterPixels.size.toDouble()
+        val globalAutoExposure = if (progress.isNull("auto_exposure_ev")) {
+            0.0
+        } else {
+            progress.optDouble("auto_exposure_ev", 0.0)
+        }
+        val boostReferenceMax = if (progress.isNull("film_boost_reference_max")) {
+            0.0
+        } else {
+            progress.optDouble("film_boost_reference_max", 0.0)
+        }
+        val headroomReferenceMax = if (progress.isNull("headroom_reference_max")) {
+            0.0
+        } else {
+            progress.optDouble("headroom_reference_max", 0.0)
+        }
+        Diag.log(
+            "EXPORT",
+            "tiled export global_auto_exposure_ev=$globalAutoExposure " +
+                "boost_reference_max=$boostReferenceMax " +
+                "headroom_reference_max=$headroomReferenceMax " +
+                "preview_mean_rgb=${meterMean.joinToString(",")}",
+        )
+        // Several kernels launch three threads per pixel (RGB channels).
+        // 5.2 MP keeps even those dispatches below Adreno's ~16.7 M work-item
+        // reliability wall after the overlap area is included.
+        val coreRows = (5_200_000 / width - 2 * halo).coerceAtLeast(128)
+        val tileCount = (height + coreRows - 1) / coreRows
+        val result = runCatching {
+            Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        }.getOrElse { return@withContext null to "无法分配全尺寸成片：$it" }
+        val canvas = Canvas(result)
+        val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+        val samplePaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+        var exposureForTiles = globalAutoExposure
+
+        fun tileParams(cropTop: Int, cropBottom: Int, exposureEv: Double): JSONObject =
+            JSONObject(baseParams.toString()).apply {
+                put("overscan_active", false)
+                put("date_imprint_active", false)
+                // Keep the auto-exposure node active and inject the
+                // whole-frame EV. This is the same code path as the preview;
+                // adding the EV to manual compensation instead produced a
+                // visibly brighter print.
+                put("auto_exposure", true)
+                put("auto_exposure_override_active", true)
+                put("auto_exposure_override_ev", exposureEv)
+                put(
+                    "exposure_compensation_ev",
+                    baseParams.optDouble("exposure_compensation_ev", 0.0),
+                )
+                if (boostReferenceMax > 0.0) {
+                    put("film_boost_reference_max", boostReferenceMax)
+                }
+                if (headroomReferenceMax > 0.0) {
+                    put("headroom_reference_max", headroomReferenceMax)
+                }
+                put("geometry_crop_x", 0.0)
+                put("geometry_crop_y", cropTop.toDouble() / height)
+                put("geometry_crop_w", 1.0)
+                put("geometry_crop_h", (cropBottom - cropTop).toDouble() / height)
+            }
+
+        try {
+            var coreTop = 0
+            var tileIndex = 0
+            while (coreTop < height) {
+                val coreBottom = minOf(height, coreTop + coreRows)
+                val readTop = maxOf(0, coreTop - halo)
+                val readBottom = minOf(height, coreBottom + halo)
+                var params = tileParams(readTop, readBottom, exposureForTiles)
+                opened.setParams(params.toString())
+                var tile = opened.render("full", true)
+                    ?: return@withContext null to opened.engineError()
+                if (tileIndex == 0) {
+                    // A full-resolution render and the safe preview can have
+                    // slightly different tone response at the same reported
+                    // EV. Match the first tile to its preview region, then use
+                    // the calibrated EV for every remaining tile. The loop is
+                    // bounded and normally converges in one or two passes.
+                    for (attempt in 0 until 3) {
+                        val scale = tile.height.toDouble() / (readBottom - readTop)
+                        val probeTop = ((coreTop - readTop) * scale).roundToInt()
+                        val probeBottom = ((coreBottom - readTop) * scale).roundToInt()
+                        val tileMean = sampledRegionMean(
+                            tile,
+                            Rect(0, probeTop, tile.width, probeBottom),
+                            samplePaint,
+                        )
+                        val refTop = (coreTop * meterFrame.height / height)
+                            .coerceIn(0, meterFrame.height - 1)
+                        val refBottom = (coreBottom * meterFrame.height / height)
+                            .coerceIn(refTop + 1, meterFrame.height)
+                        val refMean = sampledRegionMean(
+                            meterFrame,
+                            Rect(0, refTop, meterFrame.width, refBottom),
+                            samplePaint,
+                        )
+                        val correction = exposureCorrectionEv(tileMean, refMean)
+                        Diag.log(
+                            "EXPORT",
+                            "tile exposure calibration attempt=$attempt " +
+                                "src=${tileMean.joinToString(",")} " +
+                                "ref=${refMean.joinToString(",")} " +
+                                "correction_ev=$correction exposure_ev=$exposureForTiles",
+                        )
+                        if (kotlin.math.abs(correction) < 0.04) break
+                        exposureForTiles =
+                            (exposureForTiles + correction).coerceIn(-8.0, 8.0)
+                        tile.recycle()
+                        params = tileParams(readTop, readBottom, exposureForTiles)
+                        opened.setParams(params.toString())
+                        tile = opened.render("full", true)
+                            ?: return@withContext null to opened.engineError()
+                    }
+                }
+                val sourceScale = tile.height.toDouble() / (readBottom - readTop)
+                val srcTop = ((coreTop - readTop) * sourceScale).roundToInt()
+                val srcBottom = ((coreBottom - readTop) * sourceScale).roundToInt()
+                val src = Rect(0, srcTop, tile.width, srcBottom)
+                val dst = Rect(0, coreTop, width, coreBottom)
+                canvas.drawBitmap(tile, src, dst, paint)
+                tile.recycle()
+                coreTop = coreBottom
+                tileIndex += 1
+                onProgress(
+                    10 + (78 * tileIndex / tileCount),
+                    "分片冲印 $tileIndex/$tileCount",
+                )
+            }
+            result to ""
+        } catch (t: Throwable) {
+            result.recycle()
+            null to (t.message ?: t.toString())
+        } finally {
+            meterFrame.recycle()
+        }
+    }
+
+    private fun sampledRegionMean(
+        bitmap: Bitmap,
+        src: Rect,
+        paint: Paint,
+        sampleWidth: Int = 96,
+    ): DoubleArray {
+        if (src.width() <= 0 || src.height() <= 0) return doubleArrayOf(0.0, 0.0, 0.0)
+        val sampleHeight = (sampleWidth * src.height().toDouble() / src.width())
+            .roundToInt()
+            .coerceIn(8, 256)
+        val sample = Bitmap.createBitmap(sampleWidth, sampleHeight, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(sample)
+        canvas.drawBitmap(
+            bitmap,
+            src,
+            Rect(0, 0, sampleWidth, sampleHeight),
+            paint,
+        )
+        val pixels = IntArray(sampleWidth * sampleHeight)
+        sample.getPixels(pixels, 0, sampleWidth, 0, 0, sampleWidth, sampleHeight)
+        sample.recycle()
+        val mean = DoubleArray(3)
+        for (pixel in pixels) {
+            mean[0] += (pixel shr 16) and 0xFF
+            mean[1] += (pixel shr 8) and 0xFF
+            mean[2] += pixel and 0xFF
+        }
+        for (c in 0..2) mean[c] /= pixels.size.toDouble()
+        return mean
+    }
+
+    private fun exposureCorrectionEv(source: DoubleArray, target: DoubleArray): Double {
+        fun linear(channel: Double): Double {
+            val value = (channel / 255.0).coerceIn(0.0, 1.0)
+            return if (value <= 0.04045) value / 12.92
+            else Math.pow((value + 0.055) / 1.055, 2.4)
+        }
+        fun luminance(rgb: DoubleArray): Double =
+            0.2126 * linear(rgb[0]) + 0.7152 * linear(rgb[1]) + 0.0722 * linear(rgb[2])
+        val sourceLuma = luminance(source).coerceAtLeast(1e-8)
+        val targetLuma = luminance(target).coerceAtLeast(1e-8)
+        return (kotlin.math.ln(targetLuma / sourceLuma) / kotlin.math.ln(2.0))
+            .coerceIn(-4.0, 4.0)
+    }
+
+    private suspend fun renderOverscanTemplate(
+        handle: EngineHandle,
+        file: File,
+        baseParams: JSONObject,
+    ): Pair<Bitmap?, String> {
+        val templateSession = openSession(handle, file, 3200, remember = false)
+            ?: return null to "片边模板打开失败"
+        return try {
+            withContext(native) {
+                templateSession.setParams(baseParams.toString())
+                val bitmap = templateSession.render("preview", true)
+                bitmap to (if (bitmap == null) handle.lastError.orEmpty() else "")
+            }
+        } finally {
+            withContext(native) { templateSession.close() }
+        }
+    }
+
+    /**
+     * Recombines the full-resolution tiled photograph with a clean, smaller
+     * overscan render. The border is upscaled; the photograph itself remains
+     * at source resolution.
+     */
+    private fun composeFullOverscan(photo: Bitmap, template: Bitmap): Pair<Bitmap?, String> {
+        // Measured registration of the photo gate inside the 135 overscan
+        // canvas. Keeping these normalised means preview size does not matter.
+        val gate = Rect(
+            (template.width * 0.018529).roundToInt(),
+            (template.height * 0.163291).roundToInt(),
+            (template.width * 0.974297).roundToInt(),
+            (template.height * 0.838608).roundToInt(),
+        )
+        if (gate.width() <= 0 || gate.height() <= 0) return null to "片边画幅定位失败"
+        val scaleX = photo.width.toDouble() / gate.width()
+        val scaleY = photo.height.toDouble() / gate.height()
+        val finalW = (template.width * scaleX).roundToInt()
+        val finalH = (template.height * scaleY).roundToInt()
+        val result = runCatching {
+            Bitmap.createBitmap(finalW, finalH, Bitmap.Config.ARGB_8888)
+        }.getOrElse { return null to "无法分配带片边全尺寸成片：$it" }
+        val canvas = Canvas(result)
+        val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply {
+            isDither = true
+        }
+        canvas.drawBitmap(template, null, Rect(0, 0, finalW, finalH), paint)
+        val dst = Rect(
+            (gate.left * scaleX).roundToInt(),
+            (gate.top * scaleY).roundToInt(),
+            (gate.left * scaleX).roundToInt() + photo.width,
+            (gate.top * scaleY).roundToInt() + photo.height,
+        )
+        canvas.drawBitmap(photo, null, dst, paint)
+        return result to ""
+    }
+
+    private fun Session.engineError(): String =
+        this@DarkroomViewModel.engine?.lastError.orEmpty().ifEmpty { "全尺寸分片冲印失败" }
 
     /**
      * A lost Vulkan device is fatal for the engine that owned it: every later

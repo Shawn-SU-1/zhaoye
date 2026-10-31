@@ -245,6 +245,8 @@ struct spk_session {
 
     std::mutex lock;
     Progress progress;
+    // Safe to read from a UI thread while `lock` is held by a render.
+    std::atomic<double> live_progress_pct{0.0};
 };
 
 // ---------------------------------------------------------------------------
@@ -933,6 +935,22 @@ spk_session* open_frame(spk_engine* engine, const FrameIn& frame, const char* pa
         }
         engine->gpu->end_frame();
         if (!session->source.buf) { g_error = upload_error; return nullptr; }
+        if (frame.host && frame.channels == 3 && uploaded.pixels() > 1'000'000) {
+            const uint64_t count = uploaded.pixels();
+            const uint64_t samples[] = {
+                0, count / 3, count / 2, count > 1 ? count - 1 : 0
+            };
+            for (uint64_t pixel : samples) {
+                float check[3] = {};
+                if (!engine->gpu->read(session->source.buf.get(), size_t(pixel * 3 * sizeof(float)),
+                                       check, sizeof check, upload_error) ||
+                    std::memcmp(check, frame.host + pixel * 3, sizeof check) != 0) {
+                    g_error = "source upload verification failed at pixel " +
+                              std::to_string(pixel) + ": " + upload_error;
+                    return nullptr;
+                }
+            }
+        }
     }
 
     session->pipeline = std::make_unique<Pipeline>(engine->gpu, &engine->colour, &engine->blob,
@@ -1101,12 +1119,19 @@ bool negative_for(spk_session* session, const Tier& tier, Progress* progress, Im
     }
     Image source;
     if (!tier_image(session, tier, source, error)) return false;
-    // Every tier's node applies the frame's one EV (RFC-015 P.1).
-    if (!ensure_meter(session, error)) return false;
     const CameraParams& camera = session->params.camera;
+    const bool exposure_override =
+        camera.auto_exposure && camera.auto_exposure_override_active;
+    // Every tier's node applies the frame's one EV (RFC-015 P.1). A source
+    // tile is handed the whole frame's EV and does not need to meter its crop.
+    if (!exposure_override && !ensure_meter(session, error)) return false;
     session->pipeline->set_auto_exposure_ev(
-        camera.auto_exposure ? std::optional<double>(session->meter.evs.of(camera.auto_exposure_method))
-                             : std::nullopt);
+        camera.auto_exposure
+            ? std::optional<double>(
+                  exposure_override
+                      ? camera.auto_exposure_override_ev
+                      : session->meter.evs.of(camera.auto_exposure_method))
+            : std::nullopt);
     Image negative;
     if (!run_film_for(session, source, negative, progress, error)) return false;
     state.applied_ev = session->pipeline->last_auto_exposure_ev();
@@ -1194,6 +1219,8 @@ spk_status render_tier(spk_session* session, const char* tier_name, bool use_rep
     gpu::Gpu* gpu = session->engine->gpu;
     const auto started = std::chrono::steady_clock::now();
     session->progress = Progress{};
+    session->live_progress_pct.store(0.0);
+    session->progress.live_pct = &session->live_progress_pct;
     session->progress.progress_id = "p" + std::to_string(next_id());
     // Opt-in, because turning it on serialises every node. See Progress.
     session->progress.detailed = std::getenv("SPEKTRAFILM_NODE_TIMINGS") != nullptr;
@@ -1239,6 +1266,7 @@ spk_status render_tier(spk_session* session, const char* tier_name, bool use_rep
         g_error = error;
         return error == "render cancelled" ? SPK_ERR_CANCELLED : SPK_ERR_GPU;
     }
+    session->live_progress_pct.store(100.0);
     out->elapsed_ms = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - started).count();
     out->reprint = use_reprint && had_negative ? 1 : 0;
@@ -2254,6 +2282,10 @@ spk_status spk_progress(spk_session* session, const char* progress_id, char** ou
     // RFC-015 P.1, additive: the EV the auto-exposure node applied to this
     // render's negative, null with the meter off.
     out.set("auto_exposure_ev", p.auto_exposure_ev ? Json(*p.auto_exposure_ev) : Json());
+    out.set("film_boost_reference_max",
+            p.film_boost_reference_max ? Json(*p.film_boost_reference_max) : Json());
+    out.set("headroom_reference_max",
+            p.headroom_reference_max ? Json(*p.headroom_reference_max) : Json());
     // RFC-020 §3.2, additive: whether the system asked for memory back as this
     // render started. Reported and nothing else -- the mode that would act on
     // it (§4) does not exist yet.
@@ -2318,6 +2350,10 @@ spk_status spk_progress(spk_session* session, const char* progress_id, char** ou
     out.set("cancelled", Json(p.cancelled));
     if (out_json) *out_json = dup_json(out);
     return SPK_OK;
+}
+
+double spk_progress_percent(spk_session* session) {
+    return session ? session->live_progress_pct.load() : 0.0;
 }
 
 void spk_result_free(spk_result* result) {

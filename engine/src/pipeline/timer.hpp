@@ -2,6 +2,7 @@
 // nodes (`pipeline.cpp`, `scene_latitude.cpp`). Internal: include after
 // `pipeline.hpp`.
 #pragma once
+#include <algorithm>
 #include <chrono>
 #include <string>
 
@@ -30,6 +31,11 @@ struct Pipeline::Timer {
             p_->progress_->node_ms[label_] += ms;
         }
         p_->progress_->fired += 1;
+        if (p_->progress_->live_pct && p_->progress_->total_nodes > 0) {
+            const double pct = 100.0 * double(p_->progress_->fired) /
+                               double(p_->progress_->total_nodes);
+            p_->progress_->live_pct->store(std::min(100.0, std::max(0.0, pct)));
+        }
     }
     Pipeline* p_;
     const char* label_;

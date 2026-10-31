@@ -9,10 +9,35 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContract
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -28,6 +53,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -40,6 +66,7 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -47,6 +74,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -60,7 +88,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -68,24 +101,38 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
 import java.util.Locale
+import kotlin.math.roundToInt
 
 private enum class V2Picker { Film, Paper }
+private enum class CanvasPhase { Empty, Loading, Ready }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DarkroomScreenV2(
     vm: DarkroomViewModel = viewModel(),
     debugImage: String? = null,
+    debugExportLongEdge: Int? = null,
+    debugExport: Boolean = false,
+    debugOverscan: Boolean? = null,
+    debugForceTiled: Boolean = false,
     onSettings: () -> Unit = {},
 ) {
     var picking by remember { mutableStateOf<V2Picker?>(null) }
     var comparing by rememberSaveable { mutableStateOf(false) }
     var compareProgress by rememberSaveable { mutableStateOf(0.5f) }
+    var compareHapticBucket by remember { mutableStateOf(1) }
     var zoomScale by remember { mutableStateOf(1f) }
     var group by rememberSaveable { mutableStateOf(0) }
     var exportTarget by remember { mutableStateOf<ExportTarget?>(null) }
+    val haptics = rememberZhaoyeHaptics()
+
+    LaunchedEffect(vm.status, vm.statusIsError) {
+        if (vm.statusIsError) haptics.perform(HapticCue.Error)
+    }
 
     LaunchedEffect(zoomScale, vm.preview) {
         if (zoomScale > 1.5f && !comparing) {
@@ -99,11 +146,20 @@ fun DarkroomScreenV2(
         if (comparing && vm.overscanOn) vm.requestComparison() else vm.releaseComparison()
     }
 
-    LaunchedEffect(debugImage) {
+    LaunchedEffect(debugImage, debugExportLongEdge, debugExport, debugOverscan, debugForceTiled) {
+        debugExportLongEdge?.let(vm::chooseExportLongEdge)
+        vm.debugForceTiledExport = debugForceTiled
+        debugOverscan?.let { enabled ->
+            if (vm.overscanOn != enabled) vm.toggleOverscan()
+        }
         val target = debugImage.orEmpty()
         if (target.isEmpty()) return@LaunchedEffect
         if (target.startsWith("content://")) vm.open(Uri.parse(target))
         else vm.openFile(java.io.File(target))
+        if (debugExport) {
+            while (vm.busy || vm.preview == null) kotlinx.coroutines.delay(100)
+            vm.export()
+        }
     }
 
     val context = LocalContext.current
@@ -152,37 +208,71 @@ fun DarkroomScreenV2(
         ) {
             val bitmap = vm.preview
             val comparisonReady = !vm.overscanOn || vm.comparisonPreview != null
-            if (bitmap != null) {
-                val previewBitmap = if (comparing && vm.overscanOn) {
-                    vm.comparisonPreview ?: bitmap
-                } else {
-                    vm.inspectionPreview ?: bitmap
+            val phase = when {
+                bitmap != null -> CanvasPhase.Ready
+                vm.busy || vm.hasFrame -> CanvasPhase.Loading
+                else -> CanvasPhase.Empty
+            }
+            AnimatedContent(
+                targetState = phase,
+                transitionSpec = {
+                    (
+                        fadeIn(tween(220, delayMillis = 30)) +
+                            scaleIn(tween(220, easing = FastOutSlowInEasing), initialScale = 0.985f)
+                        ) togetherWith (
+                        fadeOut(tween(150)) +
+                            scaleOut(tween(150, easing = FastOutSlowInEasing), targetScale = 1.008f)
+                        )
+                },
+                label = "darkroom-canvas",
+            ) { state ->
+                when (state) {
+                    CanvasPhase.Ready -> {
+                        val readyBitmap = vm.preview
+                        if (readyBitmap != null) {
+                            val previewBitmap = if (comparing && vm.overscanOn) {
+                                vm.comparisonPreview ?: readyBitmap
+                            } else {
+                                vm.inspectionPreview ?: readyBitmap
+                            }
+                            ZoomablePreview(
+                                bitmap = previewBitmap,
+                                originalBitmap = vm.originalPreview.takeIf {
+                                    comparing && comparisonReady
+                                },
+                                compareProgress = compareProgress.takeIf {
+                                    comparing && comparisonReady
+                                },
+                                longPressBitmap = vm.originalPreview,
+                                colorFilter = null,
+                                modifier = Modifier.fillMaxSize().padding(6.dp),
+                                onScaleChanged = { zoomScale = it },
+                            )
+                        }
+                    }
+                    CanvasPhase.Loading -> DarkroomLoading()
+                    CanvasPhase.Empty -> {
+                        EmptyDarkroom(vm, openGallery) { pickFile.launch(arrayOf("*/*")) }
+                    }
                 }
-                ZoomablePreview(
-                    bitmap = previewBitmap,
-                    originalBitmap = vm.originalPreview.takeIf { comparing && comparisonReady },
-                    compareProgress = compareProgress.takeIf { comparing && comparisonReady },
-                    longPressBitmap = vm.originalPreview,
-                    colorFilter = null,
-                    modifier = Modifier.fillMaxSize().padding(6.dp),
-                    onScaleChanged = { zoomScale = it },
-                )
-            } else {
-                EmptyDarkroom(vm, openGallery) { pickFile.launch(arrayOf("*/*")) }
             }
 
-            if (vm.busy) {
-                Text(
-                    if (vm.isScrubbing) "快速预览…" else "冲印中…",
-                    color = Amber,
-                    fontSize = 11.sp,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(10.dp)
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(Color(0xCC1B1815))
-                        .padding(horizontal = 10.dp, vertical = 4.dp),
-                )
+            AnimatedContent(
+                targetState = vm.busy && bitmap != null,
+                modifier = Modifier.align(Alignment.TopEnd).padding(10.dp),
+                transitionSpec = {
+                    (
+                        fadeIn(tween(130)) +
+                            slideInVertically(tween(160), initialOffsetY = { -it / 4 })
+                        ) togetherWith (
+                        fadeOut(tween(100)) +
+                            slideOutVertically(tween(120), targetOffsetY = { -it / 5 })
+                        )
+                },
+                label = "busy-badge-visibility",
+            ) { visible ->
+                if (visible) BusyBadge(scrubbing = vm.isScrubbing)
+                else Spacer(Modifier.size(0.dp))
             }
 
             if (bitmap != null) {
@@ -245,7 +335,14 @@ fun DarkroomScreenV2(
                 Text("原图", color = Faint, fontSize = 10.sp)
                 Slider(
                     value = compareProgress,
-                    onValueChange = { compareProgress = it },
+                    onValueChange = {
+                        val bucket = (it * 2f).roundToInt()
+                        if (bucket != compareHapticBucket) {
+                            haptics.perform(HapticCue.Detent)
+                            compareHapticBucket = bucket
+                        }
+                        compareProgress = it
+                    },
                     valueRange = 0f..1f,
                     colors = SliderDefaults.colors(
                         thumbColor = Amber,
@@ -261,17 +358,33 @@ fun DarkroomScreenV2(
             }
         }
 
-        Text(
-            vm.status,
-            color = if (vm.statusIsError) SafeRed else Faint,
-            fontSize = 11.sp,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
+        AnimatedContent(
+            targetState = vm.status to vm.statusIsError,
+            transitionSpec = {
+                (
+                    fadeIn(tween(150)) +
+                        slideInVertically(tween(160), initialOffsetY = { it / 3 })
+                    ) togetherWith (
+                    fadeOut(tween(100)) +
+                        slideOutVertically(tween(120), targetOffsetY = { -it / 4 })
+                    )
+            },
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 34.dp)
-                .padding(horizontal = 16.dp, vertical = 5.dp),
-        )
+                .heightIn(min = 34.dp),
+            label = "status-line",
+        ) { (text, isError) ->
+            Text(
+                text,
+                color = if (isError) SafeRed else Faint,
+                fontSize = 11.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 5.dp),
+            )
+        }
 
         EditorDock(
             vm = vm,
@@ -303,6 +416,10 @@ fun DarkroomScreenV2(
             },
             onDismiss = { exportTarget = null },
         )
+    }
+
+    vm.exportProgress?.let { progress ->
+        ExportProgressDialog(progress)
     }
 
     when (picking) {
@@ -396,6 +513,7 @@ private fun EditorDock(
     onPaper: () -> Unit,
 ) {
     val groups = listOf("光影", "质感", "胶片", "片边")
+    val haptics = rememberZhaoyeHaptics()
     Column(
         Modifier
             .fillMaxWidth()
@@ -412,23 +530,36 @@ private fun EditorDock(
         ) {
             groups.forEachIndexed { index, label ->
                 val active = group == index
+                val background by animateColorAsState(
+                    targetValue = if (active) Color(0xFF30251A) else Color.Transparent,
+                    animationSpec = tween(160),
+                    label = "dock-group-background",
+                )
+                val tint by animateColorAsState(
+                    targetValue = when {
+                        active -> Amber
+                        enabled -> Bone
+                        else -> Color(0xFF5D554D)
+                    },
+                    animationSpec = tween(160),
+                    label = "dock-group-tint",
+                )
                 Box(
                     Modifier
                         .weight(1f)
-                        .clickable(enabled = enabled) { onGroup(index) }
+                        .clickable(enabled = enabled) {
+                            if (group != index) haptics.perform(HapticCue.Selection)
+                            onGroup(index)
+                        }
                         .padding(horizontal = 4.dp, vertical = 7.dp)
                         .clip(RoundedCornerShape(9.dp))
-                        .background(if (active) Color(0xFF30251A) else Color.Transparent)
+                        .background(background)
                         .padding(vertical = 7.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         label,
-                        color = when {
-                            active -> Amber
-                            enabled -> Bone
-                            else -> Color(0xFF5D554D)
-                        },
+                        color = tint,
                         fontSize = 12.sp,
                         fontWeight = if (active) FontWeight.Medium else FontWeight.Normal,
                     )
@@ -556,6 +687,77 @@ private fun EditorDock(
 }
 
 @Composable
+private fun DarkroomLoading() {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        val transition = rememberInfiniteTransition(label = "darkroom-loading")
+        val angle by transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1700, easing = LinearEasing),
+            ),
+            label = "darkroom-loading-angle",
+        )
+        Canvas(Modifier.size(34.dp)) {
+            drawCircle(
+                color = Color(0xFF493B2D),
+                radius = size.minDimension / 2f - 2.dp.toPx(),
+                style = Stroke(width = 2.dp.toPx()),
+            )
+            rotate(angle) {
+                drawArc(
+                    color = Amber,
+                    startAngle = -78f,
+                    sweepAngle = 92f,
+                    useCenter = false,
+                    style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round),
+                )
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Text("正在冲洗底片…", color = Faint, fontSize = 11.sp, letterSpacing = 1.sp)
+    }
+}
+
+@Composable
+private fun BusyBadge(scrubbing: Boolean) {
+    val transition = rememberInfiniteTransition(label = "busy-badge")
+    val pulse by transition.animateFloat(
+        initialValue = 0.45f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(900, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "busy-badge-pulse",
+    )
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color(0xCC1B1815))
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .size(5.dp)
+                .clip(RoundedCornerShape(50))
+                .background(Amber.copy(alpha = pulse)),
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            if (scrubbing) "快速预览" else "正在冲印",
+            color = Amber,
+            fontSize = 11.sp,
+        )
+    }
+}
+
+@Composable
 private fun V2BottomNavigation(
     canUseImage: Boolean,
     canCompare: Boolean,
@@ -599,28 +801,90 @@ private fun V2NavItem(
     modifier: Modifier,
     onClick: () -> Unit,
 ) {
-    val tint = when {
-        active -> Amber
-        enabled -> Bone
-        else -> Color(0xFF5D554D)
-    }
+    val haptics = rememberZhaoyeHaptics()
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val tint by animateColorAsState(
+        targetValue = when {
+            active -> Amber
+            enabled -> Bone
+            else -> Color(0xFF5D554D)
+        },
+        animationSpec = tween(150),
+        label = "nav-tint",
+    )
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.94f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMedium,
+        ),
+        label = "nav-press-scale",
+    )
+    val activeScale by animateFloatAsState(
+        targetValue = if (active) 1.06f else 1f,
+        animationSpec = spring(
+            dampingRatio = 0.82f,
+            stiffness = Spring.StiffnessMedium,
+        ),
+        label = "nav-active-scale",
+    )
+    val indicator by animateFloatAsState(
+        targetValue = if (active) 1f else 0f,
+        animationSpec = spring(
+            dampingRatio = 0.86f,
+            stiffness = Spring.StiffnessMedium,
+        ),
+        label = "nav-indicator",
+    )
     Column(
         modifier
             .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = pressScale
+                scaleY = pressScale
+            }
             .clip(RoundedCornerShape(10.dp))
-            .clickable(enabled = enabled, onClick = onClick)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = LocalIndication.current,
+                enabled = enabled,
+            ) {
+                haptics.perform(HapticCue.Selection)
+                onClick()
+            }
             .padding(vertical = 7.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(20.dp))
+        Icon(
+            icon,
+            contentDescription = label,
+            tint = tint,
+            modifier = Modifier
+                .size(20.dp)
+                .graphicsLayer {
+                    scaleX = activeScale
+                    scaleY = activeScale
+                },
+        )
         Spacer(Modifier.height(2.dp))
         Text(label, color = tint, fontSize = 10.sp)
+        Spacer(Modifier.height(2.dp))
+        Box(
+            Modifier
+                .width(18.dp)
+                .height(2.dp)
+                .graphicsLayer { alpha = indicator }
+                .clip(RoundedCornerShape(50))
+                .background(Amber),
+        )
     }
 }
 
 @Composable
 private fun DockHeading(text: String, onReset: (() -> Unit)? = null) {
+    val haptics = rememberZhaoyeHaptics()
     Row(
         Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -632,7 +896,12 @@ private fun DockHeading(text: String, onReset: (() -> Unit)? = null) {
                 "重置",
                 color = Faint,
                 fontSize = 10.sp,
-                modifier = Modifier.clickable { onReset() }.padding(6.dp),
+                modifier = Modifier
+                    .clickable {
+                        haptics.perform(HapticCue.Selection)
+                        onReset()
+                    }
+                    .padding(6.dp),
             )
         }
     }
@@ -831,7 +1100,12 @@ private fun ExportOptionsSheet(
     onDismiss: () -> Unit,
 ) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val haptics = rememberZhaoyeHaptics()
     var target by remember { mutableStateOf(initialTarget) }
+    val estimate3200 = vm.estimateExport(3200)
+    val estimate4800 = vm.estimateExport(4800)
+    val estimate6400 = vm.estimateExport(6400)
+    val estimateSource = vm.estimateExport(0)
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = state,
@@ -868,19 +1142,31 @@ private fun ExportOptionsSheet(
             )
             Spacer(Modifier.height(7.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ExportSizeChip("标准 3200", vm.exportLongEdge == 3200, Modifier.weight(1f)) {
+                ExportSizeChip(
+                    "标准 3200", exportEstimateDetail(estimate3200),
+                    vm.exportLongEdge == 3200, Modifier.weight(1f),
+                ) {
                     vm.chooseExportLongEdge(3200)
                 }
-                ExportSizeChip("高清 4800", vm.exportLongEdge == 4800, Modifier.weight(1f)) {
+                ExportSizeChip(
+                    "高清 4800", exportEstimateDetail(estimate4800),
+                    vm.exportLongEdge == 4800, Modifier.weight(1f),
+                ) {
                     vm.chooseExportLongEdge(4800)
                 }
             }
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ExportSizeChip("大图 6400", vm.exportLongEdge == 6400, Modifier.weight(1f)) {
+                ExportSizeChip(
+                    "大图 6400", exportEstimateDetail(estimate6400),
+                    vm.exportLongEdge == 6400, Modifier.weight(1f),
+                ) {
                     vm.chooseExportLongEdge(6400)
                 }
-                ExportSizeChip("片源原尺寸", vm.exportLongEdge == 0, Modifier.weight(1f)) {
+                ExportSizeChip(
+                    "片源原尺寸", exportEstimateDetail(estimateSource),
+                    vm.exportLongEdge == 0, Modifier.weight(1f),
+                ) {
                     vm.chooseExportLongEdge(0)
                 }
             }
@@ -894,13 +1180,175 @@ private fun ExportOptionsSheet(
             }
             Spacer(Modifier.height(18.dp))
             Button(
-                onClick = { onExport(target) },
+                onClick = {
+                    haptics.perform(HapticCue.Selection)
+                    onExport(target)
+                },
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = Amber, contentColor = Ink),
             ) {
                 Text(if (target == ExportTarget.Gallery) "保存到相册" else "打开系统分享")
             }
             Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+private fun exportEstimateDetail(estimate: ExportEstimate): String {
+    if (estimate.width <= 0 || estimate.height <= 0 || estimate.bytes <= 0) return "尺寸计算中"
+    val mb = estimate.bytes / 1048576.0
+    val size = if (mb >= 10.0) {
+        String.format(Locale.US, "%.0f MB", mb)
+    } else {
+        String.format(Locale.US, "%.1f MB", mb)
+    }
+    return "${estimate.width}×${estimate.height}\n约 $size"
+}
+
+@Composable
+private fun ExportProgressDialog(progress: ExportProgressUi) {
+    val haptics = rememberZhaoyeHaptics()
+    val animated by animateFloatAsState(
+        targetValue = progress.percent / 100f,
+        animationSpec = tween(260),
+        label = "export-progress",
+    )
+    val completed = progress.percent >= 100
+    var entered by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { entered = true }
+    LaunchedEffect(completed) {
+        if (completed) haptics.perform(HapticCue.Confirm)
+    }
+    Dialog(
+        onDismissRequest = {},
+        properties = DialogProperties(
+            dismissOnBackPress = false,
+            dismissOnClickOutside = false,
+            usePlatformDefaultWidth = false,
+        ),
+    ) {
+        AnimatedVisibility(
+            visible = entered,
+            enter = fadeIn(tween(180)) +
+                scaleIn(tween(180, easing = FastOutSlowInEasing), initialScale = 0.96f),
+        ) {
+            Surface(
+                color = Panel,
+                shape = RoundedCornerShape(22.dp),
+                modifier = Modifier
+                    .padding(horizontal = 24.dp)
+                    .widthIn(min = 280.dp, max = 330.dp),
+            ) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    AnimatedContent(
+                        targetState = completed,
+                        transitionSpec = {
+                            fadeIn(tween(150)) togetherWith fadeOut(tween(100))
+                        },
+                        label = "export-title",
+                    ) { done ->
+                        Text(
+                            if (done) "冲印完成" else "正在冲印成片",
+                            color = Bone,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
+                    Spacer(Modifier.height(18.dp))
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(112.dp)) {
+                        CircularProgressIndicator(
+                            progress = { animated },
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer { alpha = if (completed) 0.35f else 1f },
+                            color = Amber,
+                            trackColor = Color(0xFF332C25),
+                            strokeWidth = 7.dp,
+                        )
+                        AnimatedContent(
+                            targetState = completed,
+                            transitionSpec = {
+                                (
+                                    fadeIn(tween(150)) +
+                                        scaleIn(tween(180), initialScale = 0.82f)
+                                    ) togetherWith (
+                                    fadeOut(tween(100)) +
+                                        scaleOut(tween(100), targetScale = 1.08f)
+                                    )
+                            },
+                            label = "export-result-mark",
+                        ) { done ->
+                            if (done) {
+                                ExportSuccessCheck(Modifier.size(54.dp))
+                            } else {
+                                Text(
+                                    "${(animated * 100).roundToInt()}%",
+                                    color = Bone,
+                                    fontSize = 25.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    Text(progress.stage, color = Amber, fontSize = 12.sp)
+                    Spacer(Modifier.height(5.dp))
+                    Text(
+                        exportEstimateDetail(progress.estimate).replace('\n', ' '),
+                        color = Faint,
+                        fontSize = 10.sp,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        if (completed) "成片已写入" else "全尺寸会使用重叠分片，请保持屏幕亮起",
+                        color = Faint,
+                        fontSize = 10.sp,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExportSuccessCheck(modifier: Modifier = Modifier) {
+    val draw = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        draw.animateTo(1f, tween(340, easing = FastOutSlowInEasing))
+    }
+    Canvas(modifier) {
+        fun point(x: Float, y: Float) = Offset(size.width * x, size.height * y)
+        val a = point(0.18f, 0.54f)
+        val b = point(0.42f, 0.76f)
+        val c = point(0.82f, 0.28f)
+        val progress = draw.value
+        val first = (progress / 0.38f).coerceIn(0f, 1f)
+        val second = ((progress - 0.38f) / 0.62f).coerceIn(0f, 1f)
+        drawLine(
+            color = Amber,
+            start = a,
+            end = Offset(
+                a.x + (b.x - a.x) * first,
+                a.y + (b.y - a.y) * first,
+            ),
+            strokeWidth = 4.dp.toPx(),
+            cap = StrokeCap.Round,
+        )
+        if (second > 0f) {
+            drawLine(
+                color = Amber,
+                start = b,
+                end = Offset(
+                    b.x + (c.x - b.x) * second,
+                    b.y + (c.y - b.y) * second,
+                ),
+                strokeWidth = 4.dp.toPx(),
+                cap = StrokeCap.Round,
+            )
         }
     }
 }
@@ -912,6 +1360,7 @@ private fun ExportTargetChip(
     modifier: Modifier,
     onClick: () -> Unit,
 ) {
+    val haptics = rememberZhaoyeHaptics()
     Text(
         label,
         color = if (selected) Ink else Bone,
@@ -919,7 +1368,10 @@ private fun ExportTargetChip(
         modifier = modifier
             .clip(RoundedCornerShape(9.dp))
             .background(if (selected) Amber else Color(0xFF2A241E))
-            .clickable { onClick() }
+            .clickable {
+                if (!selected) haptics.perform(HapticCue.Selection)
+                onClick()
+            }
             .padding(vertical = 10.dp),
         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
     )
@@ -928,14 +1380,13 @@ private fun ExportTargetChip(
 @Composable
 private fun ExportSizeChip(
     label: String,
+    detail: String,
     selected: Boolean,
     modifier: Modifier,
     onClick: () -> Unit,
 ) {
-    Text(
-        label,
-        color = if (selected) Amber else Bone,
-        fontSize = 11.sp,
+    val haptics = rememberZhaoyeHaptics()
+    Column(
         modifier = modifier
             .clip(RoundedCornerShape(9.dp))
             .background(if (selected) Color(0xFF30251A) else Color(0xFF211D19))
@@ -944,8 +1395,26 @@ private fun ExportSizeChip(
                 if (selected) Amber else Color(0xFF332C25),
                 RoundedCornerShape(9.dp),
             )
-            .clickable { onClick() }
-            .padding(vertical = 10.dp),
-        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-    )
+            .clickable {
+                if (!selected) haptics.perform(HapticCue.Selection)
+                onClick()
+            }
+            .padding(horizontal = 6.dp, vertical = 9.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            label,
+            color = if (selected) Amber else Bone,
+            fontSize = 11.sp,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        )
+        Text(
+            detail,
+            color = if (selected) Color(0xFFD8C9B8) else Faint,
+            fontSize = 9.sp,
+            lineHeight = 12.sp,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            modifier = Modifier.padding(top = 2.dp),
+        )
+    }
 }

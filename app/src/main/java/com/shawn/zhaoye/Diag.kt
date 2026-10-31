@@ -3,6 +3,7 @@ package com.shawn.zhaoye
 import android.app.ActivityManager
 import android.content.Context
 import android.os.Build
+import android.util.Log
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.ArrayDeque
@@ -31,6 +32,7 @@ object Diag {
 
     /** App-side trace. Cheap enough to call on every state change. */
     fun log(tag: String, message: String) {
+        Log.i("Zhaoye", "$tag: $message")
         synchronized(ring) {
             if (ring.size >= CAP) ring.removeFirst()
             ring.addLast("${stamp.format(Date())} $tag: $message")
@@ -67,6 +69,7 @@ object Diag {
         sb.appendLine("## 引擎")
         sb.appendLine(if (engine?.isReady == true) "就绪" else "未就绪：${engine?.lastError ?: "尚未创建"}")
         sb.appendLine("capabilities ${engine?.capabilities ?: "{}"}")
+        sb.appendLine("memory ${engine?.memoryReport ?: "{}"}")
         sb.appendLine("build ${runCatching { Engine.nativeBuildInfo() }.getOrElse { it.toString() }}")
         sb.appendLine()
 

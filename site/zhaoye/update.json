@@ -1,10 +1,10 @@
 {
-  "version": "0.2.2",
-  "release_notes": "蓝奏云改为固定文件夹分享，密码 23nt。\n百度网盘和蓝奏云后续只需替换文件夹内的安装包。",
-  "sha256": "62a1893355fca82df05dedeb42857424b8c65574712974e6add1003cf16f144c",
+  "version": "0.2.4",
+  "release_notes": "大尺寸 RAW 现在可以稳定导出 6400 长边和片源原尺寸，花屏、曝光偏亮和片间色差问题已解决。\n保存与分享时可查看进度、成片尺寸和文件大小。\n新增统一触感与克制动效；设置页改为分类主菜单和独立详情页。",
+  "sha256": "5886102796c5699efce480eec6e0d56a83143d7aa10cf359adfd8df8ccc1c210",
   "stargazers_count": 3,
-  "github_release_url": "https://github.com/Shawn-SU-1/zhaoye/releases/tag/v0.2.2",
-  "github_apk_url": "https://github.com/Shawn-SU-1/zhaoye/releases/download/v0.2.2/Zhaoye-0.2.2-arm64-v8a.apk",
+  "github_release_url": "https://github.com/Shawn-SU-1/zhaoye/releases/tag/v0.2.4",
+  "github_apk_url": "https://github.com/Shawn-SU-1/zhaoye/releases/download/v0.2.4/Zhaoye-0.2.4-arm64-v8a.apk",
   "domestic_url": "https://wwbjy.lanzouv.com/b0hebl34b",
   "domestic_password": "23nt",
   "baidu_url": "https://pan.baidu.com/s/1f_aZvZQsR4no8KrLcxiJHQ?pwd=h1ec"

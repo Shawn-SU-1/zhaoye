@@ -380,6 +380,9 @@ void spk_session_release(spk_session* session);
  */
 void spk_cancel(spk_session* session, const char* progress_id);
 spk_status spk_progress(spk_session* session, const char* progress_id, char** out_json);
+/* Lock-free 0..100 percentage for a UI timer. Unlike `spk_progress`, this is
+ * safe to call from another thread while the render holds the session lock. */
+double spk_progress_percent(spk_session* session);
 
 /* --- strings and errors ------------------------------------------------ */
 

@@ -65,8 +65,11 @@ int main(int argc, char** argv) {
     const double t_open = now_ms() - t0;
     const auto& s = raw.imgdata.sizes;
     std::printf("camera      %s %s\n", raw.imgdata.idata.make, raw.imgdata.idata.model);
-    std::printf("sizes       raw %ux%u -> %ux%u  flip=%d  filters=0x%x\n",
-                s.raw_width, s.raw_height, s.width, s.height, s.flip, raw.imgdata.idata.filters);
+    std::printf("sizes       raw %ux%u -> %ux%u  flip=%d  filters=0x%x "
+                "margins=%u,%u active=%ux%u\n",
+                s.raw_width, s.raw_height, s.width, s.height, s.flip,
+                raw.imgdata.idata.filters, s.top_margin, s.left_margin,
+                s.iwidth, s.iheight);
 
     auto& p = raw.imgdata.params;
     p.user_qual = qual;
@@ -110,6 +113,23 @@ int main(int argc, char** argv) {
     std::printf("output      %ux%u  colors=%u  bits=%u  bytes=%.1f MB\n",
                 img->width, img->height, img->colors, img->bits,
                 img->data_size / 1e6);
+
+    std::printf("rows");
+    const auto* row_src = reinterpret_cast<const uint16_t*>(img->data);
+    for (int band = 0; band < 10; ++band) {
+        const uint32_t y0 = uint32_t(uint64_t(img->height) * band / 10);
+        const uint32_t y1 = uint32_t(uint64_t(img->height) * (band + 1) / 10);
+        uint64_t sum = 0, count = 0;
+        for (uint32_t y = y0; y < y1; y += 16) {
+            for (uint32_t x = 0; x < img->width; x += 31) {
+                const uint16_t* px = row_src + (size_t(y) * img->width + x) * 3;
+                sum += uint64_t(px[0]) + px[1] + px[2];
+                count += 3;
+            }
+        }
+        std::printf(" %.4f", count ? double(sum) / (double(count) * 65535.0) : 0.0);
+    }
+    std::printf("\n");
 
     // One pass: box-average down to the target edge and emit float RGB, which
     // is what spk_open wants. Nothing bigger than the target is materialised.

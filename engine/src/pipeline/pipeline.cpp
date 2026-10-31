@@ -910,13 +910,22 @@ bool Pipeline::node_exposure(const Image& in, Image& out, std::string& error) {
 // reading the table.
 bool Pipeline::node_boost(const Image& in, Image& out, std::string& error) {
     const HalationParams& hal = params_.film_render.halation;
-    if (hal.boost_ev == 0.0) { out = in; return true; }
+    if (hal.boost_ev == 0.0) {
+        if (progress_) progress_->film_boost_reference_max.reset();
+        out = in;
+        return true;
+    }
     Timer t(this, "filming.expose.boost");
     // `boost_highlights`: an exponential lift above a protected level,
     // normalised by the frame's own maximum -- so it is image-global, which is
     // why it cannot be baked into a LUT and why the maximum is reduced here.
     double max_raw = 0.0;
-    if (!device_max(in, max_raw, error)) return false;
+    if (params_.settings.film_boost_reference_max > 0.0) {
+        max_raw = params_.settings.film_boost_reference_max;
+    } else if (!device_max(in, max_raw, error)) {
+        return false;
+    }
+    if (progress_) progress_->film_boost_reference_max = max_raw;
     if (max_raw == 0.0) {
         double s[3], t0[3];
         fill3(s, 0.0);
@@ -964,12 +973,18 @@ bool Pipeline::node_headroom(const Image& in, Image& out, std::string& error) {
     const HalationParams& hal = params_.film_render.halation;
     if (!(hal.active && hal.back_reflection && hal.headroom_ev > 0.0 && hal.halation_amount > 0.0 &&
           hal.headroom_to_ev > hal.headroom_from_ev)) {
+        if (progress_) progress_->headroom_reference_max.reset();
         out = in;
         return true;
     }
     Timer t(this, "filming.expose.headroom");
     double clip = 0.0;
-    if (!device_max(in, clip, error)) return false;
+    if (params_.settings.headroom_reference_max > 0.0) {
+        clip = params_.settings.headroom_reference_max;
+    } else if (!device_max(in, clip, error)) {
+        return false;
+    }
+    if (progress_) progress_->headroom_reference_max = clip;
     if (!(clip > 0.0)) { out = in; return true; }
     const float p[7] = {float(1.0 / clip), float(kHeadroomClipFromEv),
                         float(1.0 / (kHeadroomClipToEv - kHeadroomClipFromEv)),

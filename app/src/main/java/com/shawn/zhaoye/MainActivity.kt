@@ -67,6 +67,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -88,6 +89,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlin.math.floor
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Settings
@@ -130,6 +132,18 @@ class MainActivity : ComponentActivity() {
                     DarkroomScreenV2(
                         vm = vm,
                         debugImage = intent?.getStringExtra("image") ?: intent?.dataString,
+                        debugExportLongEdge = if (intent?.hasExtra("exportLongEdge") == true) {
+                            intent.getIntExtra("exportLongEdge", Int.MIN_VALUE)
+                        } else {
+                            null
+                        },
+                        debugExport = intent?.getBooleanExtra("export", false) == true,
+                        debugOverscan = if (intent?.hasExtra("overscan") == true) {
+                            intent.getBooleanExtra("overscan", false)
+                        } else {
+                            null
+                        },
+                        debugForceTiled = intent?.getBooleanExtra("forceTiled", false) == true,
                         onSettings = { settings = true },
                     )
                 }
@@ -631,12 +645,16 @@ internal fun EdgeRow(vm: DarkroomViewModel) {
 
 @Composable
 private fun ToggleChip(label: String, value: String, on: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val haptics = rememberZhaoyeHaptics()
     Row(
         modifier
             .clip(RoundedCornerShape(10.dp))
             .background(if (on) Color(0xFF2A2118) else Panel)
             .border(1.dp, if (on) Amber else Color(0xFF2A241E), RoundedCornerShape(10.dp))
-            .clickable { onClick() }
+            .clickable {
+                haptics.perform(HapticCue.Selection)
+                onClick()
+            }
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -650,6 +668,7 @@ private fun ToggleChip(label: String, value: String, on: Boolean, modifier: Modi
 /** A one-of-N row that scrolls sideways, for values a slider cannot hold. */
 @Composable
 internal fun ChoiceRow(label: String, options: List<Pair<String, String>>, selected: String, onPick: (String) -> Unit) {
+    val haptics = rememberZhaoyeHaptics()
     Column(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
         Text(label, color = Faint, fontSize = 11.sp)
         Row(
@@ -662,7 +681,10 @@ internal fun ChoiceRow(label: String, options: List<Pair<String, String>>, selec
                     Modifier
                         .clip(RoundedCornerShape(8.dp))
                         .background(if (on) Amber else Panel)
-                        .clickable { onPick(id) }
+                        .clickable {
+                            if (!on) haptics.perform(HapticCue.Selection)
+                            onPick(id)
+                        }
                         .padding(horizontal = 10.dp, vertical = 6.dp),
                 ) { Text(name, color = if (on) Ink else Bone, fontSize = 11.sp) }
             }
@@ -672,11 +694,21 @@ internal fun ChoiceRow(label: String, options: List<Pair<String, String>>, selec
 
 @Composable
 private fun StockChip(label: String, value: String, modifier: Modifier, onClick: (() -> Unit)?) {
+    val haptics = rememberZhaoyeHaptics()
     Column(
         modifier
             .clip(RoundedCornerShape(10.dp))
             .background(Panel)
-            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable {
+                        haptics.perform(HapticCue.Selection)
+                        onClick()
+                    }
+                } else {
+                    Modifier
+                },
+            )
             .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
         Text(label, color = Faint, fontSize = 9.sp)
@@ -700,6 +732,7 @@ internal fun StockSheet(
     onDismiss: () -> Unit,
 ) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val haptics = rememberZhaoyeHaptics()
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = state,
@@ -718,7 +751,10 @@ internal fun StockSheet(
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .clickable { onPick(id) }
+                        .clickable {
+                            if (id != selected) haptics.perform(HapticCue.Selection)
+                            onPick(id)
+                        }
                         .padding(horizontal = 20.dp, vertical = 13.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -752,6 +788,13 @@ internal fun ParamSlider(
     onFinished: () -> Unit = {},
     resetValue: Float? = null,
 ) {
+    val haptics = rememberZhaoyeHaptics()
+    var hapticAnchor by remember { mutableFloatStateOf(value) }
+    val detentStep = ((range.endInclusive - range.start) / 8f).coerceAtLeast(0.0001f)
+
+    fun detentIndex(v: Float): Int =
+        floor((v - range.start) / detentStep).toInt()
+
     Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(label, color = Faint, fontSize = 11.sp, modifier = Modifier.weight(1f))
@@ -763,6 +806,8 @@ internal fun ParamSlider(
                     if (resetValue != null) {
                         detectTapGestures(
                             onDoubleTap = {
+                                haptics.perform(HapticCue.Confirm)
+                                hapticAnchor = resetValue
                                 onChange(resetValue)
                                 onFinished()
                             },
@@ -773,7 +818,13 @@ internal fun ParamSlider(
         }
         Slider(
             value = value,
-            onValueChange = onChange,
+            onValueChange = { next ->
+                if (detentIndex(next) != detentIndex(hapticAnchor)) {
+                    haptics.perform(HapticCue.Detent)
+                }
+                hapticAnchor = next
+                onChange(next)
+            },
             onValueChangeFinished = onFinished,
             valueRange = range,
             colors = SliderDefaults.colors(
