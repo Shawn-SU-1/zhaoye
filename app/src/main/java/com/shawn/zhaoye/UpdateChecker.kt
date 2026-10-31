@@ -16,6 +16,7 @@ data class UpdateInfo(
     val version: String,
     val githubUrl: String,
     val domesticUrl: String,
+    val domesticPassword: String,
     val baiduUrl: String,
     val notes: String,
 )
@@ -31,7 +32,8 @@ data class UpdateCheckResult(
  * an update and opens a download page. Android still owns install confirmation.
  */
 object UpdateChecker {
-    const val DOMESTIC_DOWNLOAD_URL = "https://wwbjy.lanzouv.com/i3EI64e0cfvc"
+    const val DOMESTIC_DOWNLOAD_URL = "https://wwbjy.lanzouv.com/b0hebl34b"
+    const val DOMESTIC_DOWNLOAD_PASSWORD = "23nt"
     const val BAIDU_DOWNLOAD_URL =
         "https://pan.baidu.com/s/1f_aZvZQsR4no8KrLcxiJHQ?pwd=h1ec"
     const val GITHUB_RELEASES_PAGE = "https://github.com/Shawn-SU-1/zhaoye/releases"
@@ -78,12 +80,15 @@ object UpdateChecker {
             .ifBlank { "$GITHUB_RELEASES_PAGE/tag/v$version" }
         val githubApk = root.optString("github_apk_url").ifBlank { githubPage }
         val domestic = root.optString("domestic_url").ifBlank { DOMESTIC_DOWNLOAD_URL }
+        val domesticPassword = root.optString("domestic_password")
+            .ifBlank { DOMESTIC_DOWNLOAD_PASSWORD }
         val baidu = root.optString("baidu_url").ifBlank { BAIDU_DOWNLOAD_URL }
         return UpdateInfo(
             currentVersion = current,
             version = version,
             githubUrl = githubApk,
             domesticUrl = domestic,
+            domesticPassword = domesticPassword,
             baiduUrl = baidu,
             notes = root.optString("release_notes").trim().take(1_600),
         )
@@ -121,6 +126,7 @@ object UpdateChecker {
             version = version,
             githubUrl = githubApk,
             domesticUrl = DOMESTIC_DOWNLOAD_URL,
+            domesticPassword = DOMESTIC_DOWNLOAD_PASSWORD,
             baiduUrl = BAIDU_DOWNLOAD_URL,
             notes = Html.fromHtml(
                 unescapeXml(encodedNotes),

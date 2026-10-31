@@ -314,7 +314,10 @@ fun SettingsScreen(vm: DarkroomViewModel = viewModel(), onBack: () -> Unit) {
             )
         }
         val updateSuffix = vm.updateInfo?.let { " · 新版本 ${it.version}" }.orEmpty()
-        LinkRow("蓝奏云国内下载$updateSuffix", UpdateChecker.DOMESTIC_DOWNLOAD_URL) {
+        LinkRow(
+            "蓝奏云国内下载$updateSuffix · 密码 ${UpdateChecker.DOMESTIC_DOWNLOAD_PASSWORD}",
+            UpdateChecker.DOMESTIC_DOWNLOAD_URL,
+        ) {
             open(context, UpdateChecker.DOMESTIC_DOWNLOAD_URL)
         }
         LinkRow("百度网盘$updateSuffix · 提取码 h1ec", UpdateChecker.BAIDU_DOWNLOAD_URL) {

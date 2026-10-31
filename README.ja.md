@@ -7,10 +7,10 @@
 
 [简体中文](README.md) · **日本語** · [English](README.en.md)
 
-> **照夜 0.2.1 をダウンロード**
+> **照夜 0.2.2 をダウンロード**
 >
 > [GitHub Release](https://github.com/Shawn-SU-1/zhaoye/releases/latest) ·
-> [中国本土向け Lanzou Cloud ミラー](https://wwbjy.lanzouv.com/i3EI64e0cfvc) ·
+> [中国本土向け Lanzou Cloud ミラー（パスワード 23nt）](https://wwbjy.lanzouv.com/b0hebl34b) ·
 > [Baidu Netdisk（抽出コード h1ec）](https://pan.baidu.com/s/1f_aZvZQsR4no8KrLcxiJHQ?pwd=h1ec)
 >
 > Android 8.0 以上、Vulkan 1.1 対応の arm64 実機が必要です。GitHub Release が
@@ -115,8 +115,8 @@ NDK と LibRaw を探します。NDK と LibRaw はリポジトリに含みま�
 ## インストール
 
 [Releases](https://github.com/Shawn-SU-1/zhaoye/releases/latest) から
-`Zhaoye-0.2.1-arm64-v8a.apk` を取得するか、
-[Lanzou Cloud](https://wwbjy.lanzouv.com/i3EI64e0cfvc) を利用してください。
+`Zhaoye-0.2.2-arm64-v8a.apk` を取得するか、
+[Lanzou Cloud](https://wwbjy.lanzouv.com/b0hebl34b)（パスワード `23nt`）を利用してください。
 [Baidu Netdisk](https://pan.baidu.com/s/1f_aZvZQsR4no8KrLcxiJHQ?pwd=h1ec)（抽出コード
 `h1ec`）も利用できます。
 サイドロードのため、提供元不明アプリのインストール許可を求められる場合があります。
@@ -125,8 +125,8 @@ NDK と LibRaw を探します。NDK と LibRaw はリポジトリに含みま�
 `c4b5c76576838005bf90de0a55331341d9b3132e0ace0077a581385f3b43ca65`
 
 ```bash
-sha256sum Zhaoye-0.2.1-arm64-v8a.apk
-# 5a45959a4aedaa4e3d16331aff6b4fd70903eedd49fbf124400d53794b799a55
+sha256sum Zhaoye-0.2.2-arm64-v8a.apk
+# 62a1893355fca82df05dedeb42857424b8c65574712974e6add1003cf16f144c
 ```
 
 以前の debug ビルドが入っている場合は、署名が異なるためアンインストールしてから

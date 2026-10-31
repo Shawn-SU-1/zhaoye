@@ -1,9 +1,9 @@
 const fallback = {
-  version: "0.2.1",
-  release_notes: "修复反转片冲印方向；加入自动更新检查。",
+  version: "0.2.2",
+  release_notes: "蓝奏云改为固定文件夹分享；下载链接保持不变。",
   github_release_url: "https://github.com/Shawn-SU-1/zhaoye/releases/latest",
   github_apk_url: "https://github.com/Shawn-SU-1/zhaoye/releases/latest",
-  domestic_url: "https://wwbjy.lanzouv.com/i3EI64e0cfvc",
+  domestic_url: "https://wwbjy.lanzouv.com/b0hebl34b",
   baidu_url: "https://pan.baidu.com/s/1f_aZvZQsR4no8KrLcxiJHQ?pwd=h1ec"
 };
 

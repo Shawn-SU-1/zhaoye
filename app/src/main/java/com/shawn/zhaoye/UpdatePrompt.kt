@@ -39,6 +39,12 @@ fun UpdatePrompt(info: UpdateInfo, visible: Boolean, onDismiss: () -> Unit) {
                     color = Bone,
                     fontSize = 12.sp,
                 )
+                Text(
+                    "蓝奏云密码 ${info.domesticPassword}；百度网盘密码 h1ec。",
+                    color = Amber,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
                 if (info.notes.isNotBlank()) {
                     Text(
                         info.notes,
