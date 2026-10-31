@@ -1,6 +1,7 @@
 {
   "version": "0.2.2",
   "release_notes": "蓝奏云改为固定文件夹分享，密码 23nt。\n百度网盘和蓝奏云后续只需替换文件夹内的安装包。",
+  "stargazers_count": 3,
   "github_release_url": "https://github.com/Shawn-SU-1/zhaoye/releases/tag/v0.2.2",
   "github_apk_url": "https://github.com/Shawn-SU-1/zhaoye/releases/download/v0.2.2/Zhaoye-0.2.2-arm64-v8a.apk",
   "domestic_url": "https://wwbjy.lanzouv.com/b0hebl34b",

@@ -5,7 +5,8 @@ const fallback = {
   github_apk_url: "https://github.com/Shawn-SU-1/zhaoye/releases/latest",
   domestic_url: "https://wwbjy.lanzouv.com/b0hebl34b",
   domestic_password: "23nt",
-  baidu_url: "https://pan.baidu.com/s/1f_aZvZQsR4no8KrLcxiJHQ?pwd=h1ec"
+  baidu_url: "https://pan.baidu.com/s/1f_aZvZQsR4no8KrLcxiJHQ?pwd=h1ec",
+  stargazers_count: 3
 };
 
 const versionBadge = document.querySelector("#version-badge");
@@ -19,6 +20,13 @@ const previous = document.querySelector("#changes-prev");
 const next = document.querySelector("#changes-next");
 const position = document.querySelector("#changes-position");
 const starCount = document.querySelector("#star-count");
+let cachedStars = fallback.stargazers_count;
+let liveStars = false;
+
+function showStars(count, live) {
+  const value = Number.isFinite(Number(count)) ? Number(count) : 0;
+  starCount.textContent = `${new Intl.NumberFormat("zh-CN").format(value)} Stars · ${live ? "点 Star" : "登录后点 Star"}`;
+}
 
 fetch("update.json", { cache: "no-store" })
   .then((response) => response.ok ? response.json() : Promise.reject())
@@ -29,6 +37,8 @@ fetch("update.json", { cache: "no-store" })
     baiduLink.href = data.baidu_url || fallback.baidu_url;
     githubRelease.href = data.github_apk_url || data.github_release_url || fallback.github_apk_url;
     hashValue.textContent = data.sha256 || fallback.sha256;
+    cachedStars = Number(data.stargazers_count ?? cachedStars);
+    if (!liveStars) showStars(cachedStars, false);
   })
   .catch(() => {
     versionBadge.textContent = `v${fallback.version}`;
@@ -174,8 +184,10 @@ fetch("https://api.github.com/repos/Shawn-SU-1/zhaoye", {
 })
   .then((response) => response.ok ? response.json() : Promise.reject())
   .then((repo) => {
-    starCount.textContent = `${new Intl.NumberFormat("zh-CN").format(repo.stargazers_count)} Stars · 登录后点 Star`;
+    liveStars = true;
+    cachedStars = repo.stargazers_count;
+    showStars(cachedStars, true);
   })
   .catch(() => {
-    starCount.textContent = "登录 GitHub 后点 Star";
+    showStars(cachedStars, false);
   });
