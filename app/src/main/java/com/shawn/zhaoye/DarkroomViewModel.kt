@@ -1124,6 +1124,9 @@ class DarkroomViewModel(app: Application) : AndroidViewModel(app) {
         if (film != null) {
             filmId = film
             Stocks.film(film).targetPaper?.let { paperId = it }
+            // Edge printing is part of the stock itself. Keep it in step while
+            // the user changes emulsions instead of leaving the previous name.
+            edgeText = defaultEdgeText()
         }
         if (paper != null) paperId = paper
         persist()

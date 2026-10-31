@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="照夜 Android 暗房下载、更新日志与多线路下载。">
+  <title>照夜 ZHAOYE · 下载与更新</title>
+  <link rel="icon" href="assets/app-icon.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="nav shell">
+    <a class="brand" href="./" aria-label="照夜首页">
+      <img src="assets/app-icon.png" alt="">
+      <span>照夜 <b>ZHAOYE</b></span>
+    </a>
+    <nav>
+      <a href="#download">下载</a>
+      <a href="#changes">更新日志</a>
+      <a href="#about">关于</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero shell">
+      <div class="hero-copy">
+        <p class="eyebrow">ANDROID SPECTRAL DARKROOM</p>
+        <h1>不是滤镜，<br><em>是冲印。</em></h1>
+        <p class="lede">
+          照夜把真实的胶片响应、显影与相纸曲线搬进手机。
+          同一张照片，沿光谱一路曝光、显影、扫描，而不是盖一层预设颜色。
+        </p>
+        <div class="hero-actions">
+          <a class="button primary" href="#download">下载 Android 版</a>
+          <a class="button quiet" href="https://github.com/Shawn-SU-1/zhaoye" rel="noreferrer">查看源码</a>
+        </div>
+        <div class="meta-line">
+          <span id="version-badge">v0.2.1</span>
+          <span>arm64-v8a</span>
+          <span>Android 8.0+</span>
+          <span>Vulkan 1.1</span>
+        </div>
+      </div>
+      <div class="hero-visual">
+        <div class="device">
+          <img src="assets/screenshot.jpg" alt="照夜单屏暗房界面">
+        </div>
+        <div class="film-label">KODAK KODACHROME 64 · DIRECT SCAN</div>
+      </div>
+    </section>
+
+    <section id="download" class="download-section shell">
+      <div class="section-head">
+        <p class="eyebrow">DOWNLOAD</p>
+        <h2>选一条能打开的路</h2>
+        <p>蓝奏云、百度网盘和 GitHub 是同一个签名版本。下载后覆盖安装即可。</p>
+      </div>
+      <div class="download-grid">
+        <article class="download-card featured">
+          <span class="tag">网盘</span>
+          <h3>蓝奏云</h3>
+          <p>国内备用线路，适合浏览器直下较慢时使用。</p>
+          <a class="button primary full" id="lanzou-link" href="https://wwbjy.lanzouv.com/i3EI64e0cfvc" rel="noreferrer">打开蓝奏云</a>
+        </article>
+        <article class="download-card">
+          <span class="tag">网盘</span>
+          <h3>百度网盘</h3>
+          <p>提取码 <b>h1ec</b>，适合已有百度网盘客户端的用户。</p>
+          <a class="button quiet full" id="baidu-link" href="https://pan.baidu.com/s/1f_aZvZQsR4no8KrLcxiJHQ?pwd=h1ec" rel="noreferrer">打开百度网盘</a>
+        </article>
+        <article class="download-card">
+          <span class="tag">国际线路</span>
+          <h3>GitHub Release</h3>
+          <p>正式发布源，附完整 Release Notes。</p>
+          <a class="button quiet full" id="github-release" href="https://github.com/Shawn-SU-1/zhaoye/releases/latest" rel="noreferrer">打开 Release</a>
+        </article>
+      </div>
+
+      <div class="checksum">
+        <div>
+          <span>APK SHA-256</span>
+          <code id="sha256">5a45959a4aedaa4e3d16331aff6b4fd70903eedd49fbf124400d53794b799a55</code>
+        </div>
+        <button id="copy-hash" type="button">复制校验值</button>
+      </div>
+    </section>
+
+    <section id="changes" class="changes shell">
+      <div class="section-head">
+        <p class="eyebrow">CHANGELOG</p>
+        <h2><span id="change-version">0.2.1</span> 更新了什么</h2>
+      </div>
+      <div class="change-panel">
+        <div class="change-number">0.2.1</div>
+        <div>
+          <h3>反转片修复与更新检查</h3>
+          <ul id="release-notes">
+            <li>修复 Kodachrome、Velvia、Provia、Ektachrome 等反转片被错误送入负片冲印链路的问题。</li>
+            <li>反转片现在直接扫描，不再经过负片色罩与相纸。</li>
+            <li>切换胶片型号时，片边文字会立即跟随变化。</li>
+            <li>启动时自动检查新版本，设置页也可以手动检查。</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="features shell">
+      <article><b>28</b><span>套实测胶片与相纸配置</span></article>
+      <article><b>800 px</b><span>拖动时真实引擎快路径</span></article>
+      <article><b>6400 px</b><span>可选大图成片尺寸</span></article>
+      <article><b>RAW</b><span>LibRaw 解码与片边重印</span></article>
+    </section>
+
+    <section id="about" class="about shell">
+      <div>
+        <p class="eyebrow">ABOUT ZHAOYE</p>
+        <h2>让一张底片<br>重新被照亮。</h2>
+      </div>
+      <div class="about-copy">
+        <p>照夜，取自唐玄宗的名马「照夜白」。这间手机暗房也得先把光放进去，影才会浮出来。</p>
+        <p>签名证书 SHA-256：<code>c4b5c76576838005bf90de0a55331341d9b3132e0ace0077a581385f3b43ca65</code></p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="shell">
+    <span>照夜 ZHAOYE · 夢島千尋 / Shawn</span>
+    <span>GPL-3.0-or-later</span>
+    <span>更新页由国内服务器提供</span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

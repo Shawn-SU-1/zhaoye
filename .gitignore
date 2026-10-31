@@ -3,6 +3,9 @@
 .gradle-home/
 .gradle-dist/
 build/
+
+# Deployment binaries live only on the release host, not in Git history.
+site/zhaoye/downloads/*.apk
 app/build/
 captures/
 .externalNativeBuild/

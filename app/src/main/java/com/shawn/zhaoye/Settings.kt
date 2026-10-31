@@ -317,6 +317,9 @@ fun SettingsScreen(vm: DarkroomViewModel = viewModel(), onBack: () -> Unit) {
         LinkRow("蓝奏云国内下载$updateSuffix", UpdateChecker.DOMESTIC_DOWNLOAD_URL) {
             open(context, UpdateChecker.DOMESTIC_DOWNLOAD_URL)
         }
+        LinkRow("百度网盘$updateSuffix · 提取码 h1ec", UpdateChecker.BAIDU_DOWNLOAD_URL) {
+            open(context, UpdateChecker.BAIDU_DOWNLOAD_URL)
+        }
         LinkRow("GitHub Releases$updateSuffix", UpdateChecker.GITHUB_RELEASES_PAGE) {
             open(context, UpdateChecker.GITHUB_RELEASES_PAGE)
         }

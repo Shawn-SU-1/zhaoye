@@ -54,16 +54,16 @@ fun UpdatePrompt(info: UpdateInfo, visible: Boolean, onDismiss: () -> Unit) {
             Row {
                 TextButton(
                     onClick = {
+                        openUpdate(context, info.domesticUrl)
+                        onDismiss()
+                    },
+                ) { Text("蓝奏云", color = Amber) }
+                TextButton(
+                    onClick = {
                         openUpdate(context, info.githubUrl)
                         onDismiss()
                     },
                 ) { Text("GitHub", color = Faint) }
-                TextButton(
-                    onClick = {
-                        openUpdate(context, info.domesticUrl)
-                        onDismiss()
-                    },
-                ) { Text("国内下载", color = Amber) }
             }
         },
         dismissButton = {

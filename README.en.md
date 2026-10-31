@@ -10,7 +10,8 @@
 > **Download Zhaoye 0.2.1**
 >
 > [GitHub Release](https://github.com/Shawn-SU-1/zhaoye/releases/latest) ·
-> [Lanzou Cloud mirror for mainland China](https://wwbjy.lanzouv.com/i3EI64e0cfvc)
+> [Lanzou Cloud mirror for mainland China](https://wwbjy.lanzouv.com/i3EI64e0cfvc) ·
+> [Baidu Netdisk (code h1ec)](https://pan.baidu.com/s/1f_aZvZQsR4no8KrLcxiJHQ?pwd=h1ec)
 >
 > Requires a real arm64 device running Android 8.0+ with Vulkan 1.1. The GitHub
 > release is the official `0.2.1` package. The Lanzou mirror is available for
@@ -132,7 +133,9 @@ run the Vulkan pipeline; a real device with Vulkan 1.1 is required.
 
 Download `Zhaoye-0.2.1-arm64-v8a.apk` from
 [Releases](https://github.com/Shawn-SU-1/zhaoye/releases/latest), or use the
-[Lanzou mirror](https://wwbjy.lanzouv.com/i3EI64e0cfvc). This is a sideloaded
+[Lanzou mirror](https://wwbjy.lanzouv.com/i3EI64e0cfvc) or
+[Baidu Netdisk mirror](https://pan.baidu.com/s/1f_aZvZQsR4no8KrLcxiJHQ?pwd=h1ec)
+(extraction code `h1ec`). This is a sideloaded
 APK, so Android may ask for permission to install from an unknown source.
 
 Release certificate SHA-256:
@@ -140,7 +143,7 @@ Release certificate SHA-256:
 
 ```bash
 sha256sum Zhaoye-0.2.1-arm64-v8a.apk
-# cfc1105b59e861fc0f16e5d50acb9139338207ca64365937b1565c4fb9333cc0
+# 5a45959a4aedaa4e3d16331aff6b4fd70903eedd49fbf124400d53794b799a55
 ```
 
 Uninstall an older local debug build before installing a release build; the
