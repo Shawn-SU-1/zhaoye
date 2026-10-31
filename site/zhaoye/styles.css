@@ -106,11 +106,13 @@ h2 { font: 600 clamp(32px, 4vw, 54px)/1.13 "Noto Serif SC", "Songti SC", serif; 
 .gallery-head > p { flex: 1 1 340px; max-width: 440px; margin: 0 0 8px; }
 .gallery-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 15px;
+  min-width: 0;
 }
 .gallery-grid figure {
   margin: 0;
+  min-width: 0;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -119,6 +121,7 @@ h2 { font: 600 clamp(32px, 4vw, 54px)/1.13 "Noto Serif SC", "Songti SC", serif; 
 .gallery-grid button {
   display: block;
   width: 100%;
+  max-width: 100%;
   padding: 0;
   border: 0;
   background: transparent;
@@ -351,7 +354,7 @@ footer {
   .gallery-head { align-items: flex-start; flex-direction: column; gap: 8px; }
   .gallery-head > div { flex-basis: auto; }
   .gallery-head > p { max-width: 620px; }
-  .gallery-grid { grid-template-columns: repeat(2, 1fr); }
+  .gallery-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .download-grid { grid-template-columns: 1fr; }
   .download-card { min-height: 220px; }
   .about { grid-template-columns: 1fr; gap: 24px; }
@@ -373,7 +376,7 @@ footer {
   .features { grid-template-columns: 1fr; }
   .features article { border-right: 0; border-bottom: 1px solid var(--line); }
   .features article:last-child { border-bottom: 0; }
-  .gallery-grid { grid-template-columns: 1fr; }
+  .gallery-grid { grid-template-columns: minmax(0, 1fr); }
   .photo-lightbox { padding: 18px; }
   .lightbox-close { top: 14px; right: 14px; }
   .film-label { left: 0; }
