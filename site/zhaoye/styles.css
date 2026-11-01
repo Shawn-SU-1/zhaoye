@@ -961,6 +961,28 @@ footer button:hover { color: var(--amber); }
 .cookie-actions .button { padding-inline: 15px; white-space: nowrap; }
 
 .guide-main { padding-block: 154px 90px; }
+.guide-nav-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.guide-back {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--bone);
+  font-size: 11px;
+  white-space: nowrap;
+  transition: border-color .2s ease, color .2s ease, background .2s ease;
+}
+.guide-back:hover {
+  border-color: rgba(230,180,95,.62);
+  background: rgba(230,180,95,.07);
+  color: var(--amber);
+}
 .guide-hero {
   max-width: 900px;
   padding-bottom: 46px;
