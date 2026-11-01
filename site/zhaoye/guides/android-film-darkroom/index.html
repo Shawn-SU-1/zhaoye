@@ -20,7 +20,7 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png">
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
   <link rel="manifest" href="/site.webmanifest">
-  <link rel="stylesheet" href="../../styles.css?v=20261101-guide3">
+  <link rel="stylesheet" href="../../styles.css?v=20261101-guide6">
   <script type="application/ld+json">
     {
       "@context": "https://schema.org",
@@ -83,7 +83,7 @@
         <p>原片只读，所有参数和片边效果都只在成片里生效，不会覆盖手机中的原始文件。</p>
       </div>
       <div class="guide-screens">
-        <a class="guide-screen" href="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/a723683c996fa1b69bb586fab5aadc03.jpg" target="_blank" rel="noreferrer">
+        <button class="guide-screen" type="button" data-full="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/a723683c996fa1b69bb586fab5aadc03.jpg" aria-label="放大查看：打开照片或 RAW">
           <span class="guide-screen-media">
             <img src="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/a723683c996fa1b69bb586fab5aadc03.jpg" alt="照夜空状态和从相册选片按钮" loading="lazy" decoding="async">
             <span class="shot-tip" style="left:58%;top:18%" data-arrow="↓">从相册导入照片</span>
@@ -93,8 +93,8 @@
           </span>
           <span><b>01</b> 打开照片或 RAW</span>
           <small>主页点击“打开”，从相册选择 JPEG/HEIF，或选择文件导入相机 RAW。</small>
-        </a>
-        <a class="guide-screen" href="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/d25623a5f2b85aff9bf698028ab63eb5.jpg" target="_blank" rel="noreferrer">
+        </button>
+        <button class="guide-screen" type="button" data-full="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/d25623a5f2b85aff9bf698028ab63eb5.jpg" aria-label="放大查看：选择胶片与相纸">
           <span class="guide-screen-media">
             <img src="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/d25623a5f2b85aff9bf698028ab63eb5.jpg" alt="照夜胶片和相纸选择界面" loading="lazy" decoding="async">
             <span class="shot-tip" style="left:65%;top:33%" data-arrow="↓">先切到胶片</span>
@@ -105,8 +105,8 @@
           </span>
           <span><b>02</b> 选择胶片与相纸</span>
           <small>在“胶片”页选择胶片型号和相纸。更换胶片时，推荐相纸与片边文字会同步更新。</small>
-        </a>
-        <a class="guide-screen" href="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/7f7bf5031c03569edad9ee1d969f6c25.jpg" target="_blank" rel="noreferrer">
+        </button>
+        <button class="guide-screen" type="button" data-full="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/7f7bf5031c03569edad9ee1d969f6c25.jpg" aria-label="放大查看：设置片门与片边">
           <span class="guide-screen-media">
             <img src="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/7f7bf5031c03569edad9ee1d969f6c25.jpg" alt="照夜画幅和片门设置界面" loading="lazy" decoding="async">
             <span class="shot-tip" style="left:66%;top:31%" data-arrow="↓">切到片边</span>
@@ -117,8 +117,8 @@
           </span>
           <span><b>03</b> 设置片门与片边</span>
           <small>选择画幅、片门和齿孔。预览会立即显示最终比例，片边文字和日期保持在照片上方。</small>
-        </a>
-        <a class="guide-screen" href="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/c347c9906742646083a9dc6765b4e8cb.jpg" target="_blank" rel="noreferrer">
+        </button>
+        <button class="guide-screen" type="button" data-full="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/c347c9906742646083a9dc6765b4e8cb.jpg" aria-label="放大查看：调整质感与导出">
           <span class="guide-screen-media">
             <img src="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/c347c9906742646083a9dc6765b4e8cb.jpg" alt="照夜颗粒和光晕参数界面" loading="lazy" decoding="async">
             <span class="shot-tip" style="left:61%;top:30%" data-arrow="↓">切到质感</span>
@@ -130,7 +130,7 @@
           </span>
           <span><b>04</b> 调整质感与导出</span>
           <small>用“光影”和“质感”微调曝光、颗粒与光晕，最后选择尺寸并保存到相册。</small>
-        </a>
+        </button>
       </div>
     </section>
 
@@ -210,5 +210,16 @@
     <a href="/">返回官网</a>
     <span>GPL-3.0-or-later</span>
   </footer>
+  <div id="photo-lightbox" class="photo-lightbox" role="dialog" aria-modal="true" aria-label="使用说明截图大图" hidden>
+    <button class="lightbox-close" type="button" aria-label="关闭">×</button>
+    <button class="lightbox-nav lightbox-prev" type="button" aria-label="上一张截图">←</button>
+    <button class="lightbox-nav lightbox-next" type="button" aria-label="下一张截图">→</button>
+    <img id="lightbox-image" src="" alt="">
+    <div class="lightbox-caption">
+      <span id="lightbox-index">01 / 04</span>
+      <b id="lightbox-name"></b>
+    </div>
+  </div>
+  <script src="guide.js?v=20261101-3"></script>
 </body>
 </html>
