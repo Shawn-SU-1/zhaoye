@@ -283,6 +283,13 @@ h2 { font: 600 clamp(32px, 4vw, 54px)/1.13 "Noto Serif SC", "Songti SC", serif; 
 }
 .gallery-head > div { flex: 0 1 560px; }
 .gallery-head > p { flex: 1 1 340px; max-width: 440px; margin: 0 0 8px; }
+.gallery-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
+  gap: 18px;
+  align-items: stretch;
+}
+.gallery-main { min-width: 0; }
 .gallery-grid {
   display: flex;
   gap: 15px;
@@ -294,10 +301,9 @@ h2 { font: 600 clamp(32px, 4vw, 54px)/1.13 "Noto Serif SC", "Songti SC", serif; 
   scrollbar-width: none;
 }
 .gallery-grid::-webkit-scrollbar { display: none; }
-.gallery-grid > figure,
-.gallery-grid > .gallery-end {
-  flex: 0 0 calc((100% - 45px) / 4);
-  width: calc((100% - 45px) / 4);
+.gallery-grid > figure {
+  flex: 0 0 calc((100% - 30px) / 3);
+  width: calc((100% - 30px) / 3);
   scroll-snap-align: start;
 }
 .gallery-grid > figure {
@@ -386,22 +392,18 @@ h2 { font: 600 clamp(32px, 4vw, 54px)/1.13 "Noto Serif SC", "Songti SC", serif; 
 }
 .gallery-end {
   position: relative;
-  min-height: 0;
+  min-height: 100%;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
   gap: 15px;
-  padding: clamp(24px, 3vw, 34px);
+  padding: clamp(20px, 2vw, 26px);
   border: 1px solid #654720;
   border-radius: 16px;
   background:
     radial-gradient(circle at 86% 16%, rgba(222,167,76,.2), transparent 30%),
     linear-gradient(145deg, #18120c, #0d0b09 70%);
-}
-.gallery-grid > .gallery-end {
-  flex-basis: calc(((100% - 45px) / 4) * 2 + 15px);
-  width: calc(((100% - 45px) / 4) * 2 + 15px);
 }
 .gallery-end::before {
   content: "";
@@ -418,7 +420,7 @@ h2 { font: 600 clamp(32px, 4vw, 54px)/1.13 "Noto Serif SC", "Songti SC", serif; 
   max-width: 520px;
   margin: 0;
   color: var(--bone);
-  font: 500 clamp(25px, 2.5vw, 36px)/1.18 Georgia, "Songti SC", serif;
+  font: 500 clamp(22px, 2vw, 29px)/1.22 Georgia, "Songti SC", serif;
   letter-spacing: -.03em;
 }
 .gallery-end a {
@@ -948,8 +950,16 @@ footer button:hover { color: var(--amber); }
   .gallery-head > div { flex-basis: auto; }
   .gallery-head > p { flex-basis: auto; max-width: 620px; }
   .gallery-section { padding-block: 48px; }
-  .gallery-grid > figure,
-  .gallery-grid > .gallery-end {
+  .gallery-layout { display: flex; flex-direction: column; gap: 14px; }
+  .gallery-main { order: 2; }
+  .gallery-end {
+    order: 1;
+    min-height: 0;
+    padding: 18px 20px;
+    gap: 8px;
+  }
+  .gallery-end h3 { font-size: 20px; }
+  .gallery-grid > figure {
     flex-basis: calc((100% - 15px) / 2);
     width: calc((100% - 15px) / 2);
   }
@@ -993,8 +1003,7 @@ footer button:hover { color: var(--amber); }
     scrollbar-width: none;
   }
   .gallery-grid::-webkit-scrollbar { display: none; }
-  .gallery-grid > figure,
-  .gallery-grid > .gallery-end {
+  .gallery-grid > figure {
     flex: 0 0 min(82vw, 360px);
     width: min(82vw, 360px);
     scroll-snap-align: start;
@@ -1002,7 +1011,6 @@ footer button:hover { color: var(--amber); }
   .gallery-grid figure:nth-child(1) button,
   .gallery-grid figure:nth-child(n+2) button { aspect-ratio: 4 / 3; }
   .gallery-grid > figure:hover { transform: none; box-shadow: 0 12px 34px rgba(0,0,0,.14); }
-  .gallery-grid > .gallery-end { min-height: 310px; }
   .gallery-grid figcaption { min-height: 42px; }
   .lightbox-caption { bottom: 12px; }
 }
@@ -1015,8 +1023,7 @@ footer button:hover { color: var(--amber); }
   .features { grid-template-columns: 1fr; }
   .features article { border-right: 0; border-bottom: 1px solid var(--line); }
   .features article:last-child { border-bottom: 0; }
-  .gallery-grid > figure,
-  .gallery-grid > .gallery-end {
+  .gallery-grid > figure {
     flex-basis: min(86vw, 350px);
     width: min(86vw, 350px);
   }
