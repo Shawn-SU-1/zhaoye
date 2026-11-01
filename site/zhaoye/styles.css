@@ -978,6 +978,123 @@ footer button:hover { color: var(--amber); }
   font-size: 16px;
   line-height: 1.9;
 }
+.guide-quickstart {
+  padding-block: 44px 48px;
+  border-bottom: 1px solid var(--line);
+}
+.guide-quickstart-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 32px;
+  margin-bottom: 24px;
+}
+.guide-quickstart-head h2 {
+  margin: 8px 0 0;
+  font: 500 clamp(27px, 4vw, 42px)/1.2 "Noto Serif SC", serif;
+}
+.guide-quickstart-head > p {
+  max-width: 420px;
+  margin: 0 0 4px;
+  color: var(--faint);
+  font-size: 12px;
+  line-height: 1.8;
+}
+.guide-screens {
+  display: flex;
+  gap: 13px;
+  padding-bottom: 12px;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+.guide-screens::-webkit-scrollbar { display: none; }
+.guide-screen {
+  flex: 0 0 240px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  scroll-snap-align: start;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  color: var(--bone);
+  text-decoration: none;
+  transition: border-color .28s ease, transform .32s cubic-bezier(.22,1,.36,1), box-shadow .28s ease;
+}
+.guide-screen-media {
+  position: relative;
+  display: block;
+  overflow: hidden;
+}
+.guide-screen:hover {
+  transform: translateY(-4px);
+  border-color: rgba(230,180,95,.6);
+  box-shadow: 0 18px 42px rgba(0,0,0,.3);
+}
+.guide-screen img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 9 / 20;
+  object-fit: cover;
+  background: #070605;
+}
+.shot-tip {
+  position: absolute;
+  z-index: 3;
+  max-width: 126px;
+  padding: 5px 8px;
+  border: 1px solid rgba(230,180,95,.8);
+  border-radius: 8px;
+  background: rgba(12,9,7,.9);
+  color: #f1d29a;
+  font: 500 9px/1.35 "Noto Sans SC", sans-serif;
+  text-align: center;
+  transform: translateX(-50%);
+  box-shadow: 0 6px 18px rgba(0,0,0,.55);
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+}
+.shot-tip::after {
+  content: attr(data-arrow);
+  margin-left: 5px;
+  color: var(--amber);
+  font-size: 13px;
+}
+.shot-hotspot {
+  position: absolute;
+  z-index: 2;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--amber);
+  border-radius: 50%;
+  background: rgba(230,180,95,.18);
+  box-shadow: 0 0 0 5px rgba(230,180,95,.13), 0 0 20px rgba(230,180,95,.45);
+  transform: translate(-50%, -50%);
+  animation: shot-hotspot 1.8s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes shot-hotspot {
+  0%, 100% { scale: .88; opacity: .7; }
+  50% { scale: 1.12; opacity: 1; }
+}
+.guide-screen > span {
+  padding: 14px 14px 0;
+  font-size: 13px;
+  font-weight: 500;
+}
+.guide-screen > span b {
+  margin-right: 6px;
+  color: var(--amber);
+  font: 9px/1 ui-monospace, monospace;
+}
+.guide-screen > small {
+  padding: 7px 14px 14px;
+  color: var(--faint);
+  font-size: 10px;
+  line-height: 1.65;
+}
 .guide-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 270px;
@@ -1045,6 +1162,21 @@ footer button:hover { color: var(--amber); }
 .guide-aside dt { color: var(--faint); }
 .guide-aside dd { color: var(--bone); text-align: right; }
 .guide-aside > a { color: var(--amber); font-size: 11px; text-decoration: none; }
+.guide-toc {
+  display: grid;
+  gap: 8px;
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255,255,255,.07);
+}
+.guide-toc .eyebrow { margin-bottom: 2px; }
+.guide-toc a {
+  color: #b8aea2;
+  font-size: 11px;
+  text-decoration: none;
+  transition: color .2s ease, transform .2s ease;
+}
+.guide-toc a:hover { color: var(--amber); transform: translateX(2px); }
 .guide-page footer a { color: #9a8c7c; text-decoration: none; }
 .guide-page footer a:hover { color: var(--amber); }
 
@@ -1097,6 +1229,8 @@ footer button:hover { color: var(--amber); }
   .features article:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
   .checksum, footer { align-items: flex-start; flex-direction: column; }
   .guide-main { padding-block: 126px 70px; }
+  .guide-quickstart-head { align-items: flex-start; flex-direction: column; gap: 10px; }
+  .guide-quickstart-head > p { max-width: 620px; }
   .guide-layout { grid-template-columns: 1fr; gap: 30px; }
   .guide-aside { position: static; order: -1; }
 }
@@ -1171,6 +1305,7 @@ footer button:hover { color: var(--amber); }
   .lightbox-prev { left: 8px; }
   .lightbox-next { right: 8px; }
   .lightbox-caption { max-width: calc(100vw - 112px); }
+  .guide-screen { flex-basis: min(74vw, 250px); }
   .film-label { left: 0; }
 }
 
