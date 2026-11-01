@@ -8,6 +8,7 @@
   <meta name="robots" content="index,follow,max-image-preview:large">
   <meta name="application-name" content="照夜 ZHAOYE">
   <meta name="theme-color" content="#0b0907">
+  <meta name="msapplication-TileColor" content="#0b0907">
   <link rel="canonical" href="https://zhaoye.8889.hair/">
   <meta property="og:type" content="website">
   <meta property="og:locale" content="zh_CN">
@@ -21,7 +22,13 @@
   <meta name="twitter:description" content="不是滤镜，是冲印。手机本地运行的胶片与 RAW 冲印工作流。">
   <meta name="twitter:image" content="https://zhaoye.8889.hair/assets/screenshot.jpg">
   <title>照夜 ZHAOYE｜Android 胶片暗房 App 下载与更新</title>
-  <link rel="icon" href="assets/app-icon.png">
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png">
+  <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96.png">
+  <link rel="icon" type="image/png" sizes="144x144" href="/favicon-144.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/site.webmanifest">
   <link rel="stylesheet" href="styles.css?v=20261101-gallery7">
   <script type="application/ld+json">
     {
@@ -34,6 +41,7 @@
       "downloadUrl": "https://github.com/Shawn-SU-1/zhaoye/releases/latest",
       "applicationCategory": "MultimediaApplication",
       "operatingSystem": "Android 8.0+",
+      "softwareVersion": "0.2.5",
       "softwareRequirements": "arm64-v8a, Vulkan 1.1",
       "isAccessibleForFree": true,
       "offers": {
@@ -49,7 +57,26 @@
       "sameAs": [
         "https://github.com/Shawn-SU-1/zhaoye"
       ],
-      "image": "https://zhaoye.8889.hair/assets/screenshot.jpg"
+      "logo": "https://zhaoye.8889.hair/favicon-192.png",
+      "image": [
+        "https://zhaoye.8889.hair/favicon-192.png",
+        "https://zhaoye.8889.hair/assets/screenshot.jpg"
+      ]
+    }
+  </script>
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": "照夜 ZHAOYE",
+      "alternateName": ["照夜", "照夜 App", "ZHAOYE 胶片暗房", "照夜安卓胶片暗房"],
+      "url": "https://zhaoye.8889.hair/",
+      "inLanguage": "zh-CN",
+      "publisher": {
+        "@type": "Person",
+        "name": "夢島千尋 / Shawn",
+        "url": "https://github.com/Shawn-SU-1"
+      }
     }
   </script>
 </head>
@@ -342,6 +369,7 @@
       </div>
       <div class="about-copy">
         <p>照夜，取自唐玄宗的名马「照夜白」。这间手机暗房也得先把光放进去，影才会浮出来。</p>
+        <p><a href="/guides/android-film-darkroom/">阅读：安卓手机上的胶片暗房，从 RAW 到片边成片 ↗</a></p>
         <p>签名证书 SHA-256：<code>c4b5c76576838005bf90de0a55331341d9b3132e0ace0077a581385f3b43ca65</code></p>
       </div>
     </section>

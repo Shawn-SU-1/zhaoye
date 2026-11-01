@@ -1,0 +1,24 @@
+{
+  "name": "照夜 ZHAOYE",
+  "short_name": "照夜",
+  "description": "Android 本地运行的胶片暗房 App，支持 RAW、光谱冲印、片边和大图导出。",
+  "lang": "zh-CN",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0b0907",
+  "theme_color": "#0b0907",
+  "icons": [
+    {
+      "src": "/favicon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/favicon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
