@@ -8,7 +8,7 @@ const fallback = {
   baidu_url: "https://pan.baidu.com/s/1f_aZvZQsR4no8KrLcxiJHQ?pwd=h1ec",
   baidu_password: "h1ec",
   website_url: "https://zhaoye.8889.hair",
-  stargazers_count: 3
+  stargazers_count: 5
 };
 
 const versionBadge = document.querySelector("#version-badge");
@@ -413,6 +413,12 @@ function mergeLocations(rawLocations) {
 }
 
 function renderStats(data) {
+  const githubStars = Number(data.github_stars);
+  if (Number.isFinite(githubStars) && githubStars >= 0) {
+    liveStars = true;
+    cachedStars = githubStars;
+    showStars(cachedStars, true);
+  }
   statViews.textContent = numberFormat.format(data.views || 0);
   statVisitors.textContent = numberFormat.format(data.visitors || 0);
   statCities.textContent = numberFormat.format(data.cities || 0);

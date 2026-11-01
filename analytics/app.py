@@ -31,6 +31,8 @@ GEO_ENDPOINT = "http://ip-api.com/json/{ip}"
 GEO_FIELDS = "status,country,countryCode,regionName,city,lat,lon"
 GEO_TTL_SECONDS = 86_400
 VISIT_GAP_SECONDS = 8
+GITHUB_REPO_API = "https://api.github.com/repos/Shawn-SU-1/zhaoye"
+GITHUB_STARS_TTL_SECONDS = 600
 
 REGION_NAMES = {
     "TW": "中国台湾",
@@ -61,6 +63,9 @@ app.config["MAX_CONTENT_LENGTH"] = 2_048
 
 _rate_lock = threading.Lock()
 _last_request_by_visitor: dict[str, float] = {}
+_github_stars_lock = threading.Lock()
+_github_stars_value: int | None = None
+_github_stars_updated_at = 0.0
 
 
 def db_connection() -> sqlite3.Connection:
@@ -251,6 +256,41 @@ def lookup_location(visitor: str, ip: str) -> dict:
     return result
 
 
+def github_stars() -> int | None:
+    global _github_stars_value, _github_stars_updated_at
+    now = time.monotonic()
+    with _github_stars_lock:
+        if (
+            _github_stars_value is not None
+            and now - _github_stars_updated_at < GITHUB_STARS_TTL_SECONDS
+        ):
+            return _github_stars_value
+
+    value: int | None = None
+    try:
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "Zhaoye-Analytics/1.0",
+        }
+        token = os.environ.get("ZHAOYE_GITHUB_TOKEN", "").strip()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        req = urllib.request.Request(GITHUB_REPO_API, headers=headers)
+        with urllib.request.urlopen(req, timeout=2.5) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        stars = data.get("stargazers_count")
+        if isinstance(stars, int) and stars >= 0:
+            value = stars
+    except Exception:
+        pass
+
+    with _github_stars_lock:
+        if value is not None:
+            _github_stars_value = value
+            _github_stars_updated_at = now
+        return _github_stars_value
+
+
 def stats_payload() -> dict:
     db = get_db()
     totals = db.execute(
@@ -278,6 +318,7 @@ def stats_payload() -> dict:
         "visitors": totals["visitors"],
         "cities": city_count,
         "updated_at": totals["updated_at"],
+        "github_stars": github_stars(),
         "locations": [dict(row) for row in locations],
     }
 
