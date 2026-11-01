@@ -14,6 +14,7 @@ import threading
 import time
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from flask import Flask, g, jsonify, request
@@ -27,8 +28,7 @@ ALLOWED_ORIGINS = {
     "https://zhaoye.8889.hair",
     "http://121.41.166.23",
 }
-GEO_ENDPOINT = "http://ip-api.com/json/{ip}"
-GEO_FIELDS = "status,country,countryCode,regionName,city,lat,lon"
+GEO_TIMEOUT_SECONDS = 3.0
 GEO_TTL_SECONDS = 86_400
 VISIT_GAP_SECONDS = 8
 GITHUB_REPO_API = "https://api.github.com/repos/Shawn-SU-1/zhaoye"
@@ -128,6 +128,11 @@ def init_db() -> None:
             (secrets.token_hex(32),),
         )
         migrate_country_names(connection)
+        # Failed lookups are not useful cache entries and prevented retries
+        # for a whole day. Keep only positive, resolved locations.
+        connection.execute(
+            "DELETE FROM geo_cache WHERE country_code='' OR lat IS NULL OR lon IS NULL"
+        )
         connection.commit()
     finally:
         connection.close()
@@ -181,6 +186,91 @@ def client_ip() -> str:
         return ""
 
 
+def fetch_json(url: str) -> dict:
+    req = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "Zhaoye-Analytics/1.0",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=GEO_TIMEOUT_SECONDS) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def lookup_provider(name: str, ip: str) -> dict | None:
+    try:
+        if name == "ipwho.is":
+            data = fetch_json(
+                f"https://ipwho.is/{urllib.parse.quote(ip)}?lang=zh-CN"
+            )
+            if not data.get("success"):
+                return None
+            return {
+                "provider": name,
+                "country": str(data.get("country") or ""),
+                "country_code": str(data.get("country_code") or "").upper(),
+                "city": str(data.get("city") or data.get("region") or ""),
+                "lat": data.get("latitude"),
+                "lon": data.get("longitude"),
+            }
+        if name == "ipinfo.io":
+            data = fetch_json(f"https://ipinfo.io/{urllib.parse.quote(ip)}/json")
+            if data.get("bogon") or not data.get("country"):
+                return None
+            latitude = longitude = None
+            loc = str(data.get("loc") or "").split(",")
+            if len(loc) == 2:
+                try:
+                    latitude, longitude = float(loc[0]), float(loc[1])
+                except ValueError:
+                    pass
+            return {
+                "provider": name,
+                "country": str(data.get("country") or ""),
+                "country_code": str(data.get("country") or "").upper(),
+                "city": str(data.get("city") or data.get("region") or ""),
+                "lat": latitude,
+                "lon": longitude,
+            }
+    except Exception:
+        return None
+    return None
+
+
+def lookup_consensus(ip: str) -> dict | None:
+    providers = ("ipwho.is", "ipinfo.io")
+    with ThreadPoolExecutor(max_workers=len(providers)) as pool:
+        resolved = [
+            item
+            for item in pool.map(lambda name: lookup_provider(name, ip), providers)
+            if item is not None
+        ]
+    if not resolved:
+        return None
+
+    by_provider = {item["provider"]: item for item in resolved}
+    preferred = by_provider.get("ipwho.is") or by_provider.get("ipinfo.io")
+    if (
+        len(resolved) == 2
+        and resolved[0]["country_code"] == resolved[1]["country_code"]
+    ):
+        preferred = by_provider["ipwho.is"]
+
+    country, country_code = normalize_country(
+        preferred["country"],
+        preferred["country_code"],
+    )
+    city = preferred["city"] or "未知"
+    return {
+        "location": city,
+        "country": country,
+        "country_code": country_code,
+        "lat": preferred["lat"],
+        "lon": preferred["lon"],
+    }
+
+
 def lookup_location(visitor: str, ip: str) -> dict:
     db = get_db()
     cached = db.execute(
@@ -206,53 +296,36 @@ def lookup_location(visitor: str, ip: str) -> dict:
     try:
         address = ipaddress.ip_address(ip)
         if not (address.is_private or address.is_loopback or address.is_reserved):
-            query = urllib.parse.urlencode({
-                "fields": GEO_FIELDS,
-                "lang": "zh-CN",
-            })
-            url = f"{GEO_ENDPOINT.format(ip=urllib.parse.quote(ip))}?{query}"
-            req = urllib.request.Request(url, headers={"User-Agent": "Zhaoye-Analytics/1.0"})
-            with urllib.request.urlopen(req, timeout=2.5) as response:
-                data = json.loads(response.read().decode("utf-8"))
-            if data.get("status") == "success":
-                country_code = str(data.get("countryCode") or "").upper()
-                country, country_code = normalize_country(
-                    str(data.get("country") or ""),
-                    country_code,
-                )
-                result = {
-                    "location": data.get("city") or data.get("regionName") or data.get("country") or "未知",
-                    "country": country,
-                    "country_code": country_code,
-                    "lat": data.get("lat"),
-                    "lon": data.get("lon"),
-                }
+            resolved = lookup_consensus(ip)
+            if resolved is not None:
+                result = resolved
     except Exception:
         pass
 
-    db.execute(
-        """
-        INSERT INTO geo_cache(visitor_hash, location, country, country_code, lat, lon, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(visitor_hash) DO UPDATE SET
-          location=excluded.location,
-          country=excluded.country,
-          country_code=excluded.country_code,
-          lat=excluded.lat,
-          lon=excluded.lon,
-          updated_at=excluded.updated_at
-        """,
-        (
-            visitor,
-            result["location"],
-            result["country"],
-            result["country_code"],
-            result["lat"],
-            result["lon"],
-            now,
-        ),
-    )
-    db.commit()
+    if result["country_code"] and result["lat"] is not None and result["lon"] is not None:
+        db.execute(
+            """
+            INSERT INTO geo_cache(visitor_hash, location, country, country_code, lat, lon, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(visitor_hash) DO UPDATE SET
+              location=excluded.location,
+              country=excluded.country,
+              country_code=excluded.country_code,
+              lat=excluded.lat,
+              lon=excluded.lon,
+              updated_at=excluded.updated_at
+            """,
+            (
+                visitor,
+                result["location"],
+                result["country"],
+                result["country_code"],
+                result["lat"],
+                result["lon"],
+                now,
+            ),
+        )
+        db.commit()
     return result
 
 
