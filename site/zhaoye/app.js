@@ -276,6 +276,7 @@ const galleryNext = document.querySelector("#gallery-next");
 const galleryPlay = document.querySelector("#gallery-play");
 const galleryPlayIcon = document.querySelector("#gallery-play-icon");
 const galleryPlayLabel = document.querySelector("#gallery-play-label");
+const galleryStatus = document.querySelector("#gallery-status");
 const galleryPosition = document.querySelector("#gallery-position");
 const galleryProgress = document.querySelector("#gallery-progress");
 const galleryLayout = document.querySelector(".gallery-layout");
@@ -287,7 +288,7 @@ let lightboxTouchX = null;
 let galleryAutoplayEnabled = true;
 let galleryAutoplayTimer = 0;
 let galleryInView = false;
-const GALLERY_AUTOPLAY_DELAY = 5_000;
+const GALLERY_AUTOPLAY_DELAY = 4_000;
 
 function photoTitle(button) {
   const caption = button.closest("figure")?.querySelector("figcaption");
@@ -375,7 +376,12 @@ function updateGalleryPlayButton() {
     galleryAutoplayEnabled ? "暂停自动播放" : "开始自动播放",
   );
   galleryPlayIcon.textContent = galleryAutoplayEnabled ? "Ⅱ" : "▶";
-  galleryPlayLabel.textContent = galleryAutoplayEnabled ? "暂停" : "播放";
+  galleryPlayLabel.textContent = galleryAutoplayEnabled ? "暂停播放" : "自动播放";
+  if (galleryStatus) {
+    galleryStatus.textContent = galleryAutoplayEnabled
+      ? "自动播放中 · 4 秒"
+      : "自动播放已暂停";
+  }
 }
 
 function clearGalleryAutoplay() {
