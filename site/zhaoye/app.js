@@ -384,10 +384,18 @@ galleryPrev?.addEventListener("click", () =>
 galleryNext?.addEventListener("click", () =>
   updateGalleryPosition(galleryPositionIndex + 1, "smooth"));
 galleryGrid?.addEventListener("scroll", () => {
-  if (!gallerySlides[1]) return;
-  const step = gallerySlides[1].offsetLeft - gallerySlides[0].offsetLeft;
-  if (step <= 0) return;
-  const nextIndex = Math.round(galleryGrid.scrollLeft / step);
+  if (!gallerySlides.length) return;
+  let nextIndex = 0;
+  let nearest = Number.POSITIVE_INFINITY;
+  gallerySlides.forEach((slide, index) => {
+    const distance = Math.abs(
+      slide.offsetLeft - gallerySlides[0].offsetLeft - galleryGrid.scrollLeft,
+    );
+    if (distance < nearest) {
+      nearest = distance;
+      nextIndex = index;
+    }
+  });
   if (nextIndex !== galleryPositionIndex) updateGalleryPosition(nextIndex, "none");
 }, { passive: true });
 window.addEventListener("resize", () => updateGalleryPosition(galleryPositionIndex, "none"));
