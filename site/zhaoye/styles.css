@@ -436,32 +436,63 @@ h2 { font: 600 clamp(32px, 4vw, 54px)/1.13 "Noto Serif SC", "Songti SC", serif; 
 
 .gallery-controls {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: auto minmax(80px, 1fr) auto;
   align-items: center;
-  gap: 9px 12px;
-  margin: 0 0 14px;
+  gap: 12px;
+  margin: 0 0 10px;
   color: var(--faint);
-  font-size: 10px;
+  font-size: 11px;
 }
-.gallery-controls b {
+.gallery-count {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  white-space: nowrap;
+}
+.gallery-count span { letter-spacing: .08em; }
+.gallery-count b {
   color: var(--bone);
-  font: 500 10px/1 ui-monospace, monospace;
+  font: 500 11px/1 ui-monospace, monospace;
   letter-spacing: .08em;
 }
-.gallery-controls > div { display: flex; gap: 5px; }
+.gallery-buttons { display: flex; gap: 7px; }
 .gallery-controls button {
-  width: 34px;
-  height: 32px;
+  min-width: 72px;
+  height: 42px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: 12px;
   background: var(--panel);
   color: var(--bone);
-  font-size: 16px;
+  font: 500 11px/1 "Noto Sans SC", sans-serif;
   cursor: pointer;
+  transition: border-color .22s ease, background .22s ease, color .22s ease, transform .22s ease;
+}
+.gallery-controls button span { color: var(--amber); font-size: 16px; }
+.gallery-controls button b { font-weight: 500; }
+.gallery-controls button:hover {
+  border-color: rgba(230,180,95,.62);
+  background: #241b12;
+  transform: translateY(-1px);
+}
+.gallery-controls button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+#gallery-play {
+  min-width: 78px;
+  border-color: #765326;
+  background: rgba(230,180,95,.08);
+  color: var(--amber);
+}
+#gallery-play[aria-pressed="false"] {
+  border-color: var(--line);
+  background: var(--panel);
+  color: var(--bone);
 }
 .gallery-controls button:disabled { opacity: .3; cursor: default; }
 .gallery-progress {
-  grid-column: 1 / -1;
   display: block;
   height: 1px;
   overflow: hidden;
@@ -469,7 +500,7 @@ h2 { font: 600 clamp(32px, 4vw, 54px)/1.13 "Noto Serif SC", "Songti SC", serif; 
 }
 .gallery-progress > span {
   display: block;
-  width: 8.333%;
+  width: 9.09%;
   height: 100%;
   background: var(--amber);
   transform-origin: left center;
@@ -1003,6 +1034,18 @@ footer button:hover { color: var(--amber); }
     scrollbar-width: none;
   }
   .gallery-grid::-webkit-scrollbar { display: none; }
+  .gallery-controls { grid-template-columns: 1fr; gap: 10px; }
+  .gallery-count { justify-content: space-between; }
+  .gallery-buttons {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 7px;
+  }
+  .gallery-controls button {
+    width: 100%;
+    min-width: 0;
+    padding-inline: 7px;
+  }
   .gallery-grid > figure {
     flex: 0 0 min(82vw, 360px);
     width: min(82vw, 360px);

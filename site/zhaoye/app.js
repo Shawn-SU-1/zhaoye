@@ -273,13 +273,21 @@ const galleryButtons = [...document.querySelectorAll(".gallery-grid button[data-
 const gallerySlides = galleryGrid ? [...galleryGrid.children] : [];
 const galleryPrev = document.querySelector("#gallery-prev");
 const galleryNext = document.querySelector("#gallery-next");
+const galleryPlay = document.querySelector("#gallery-play");
+const galleryPlayIcon = document.querySelector("#gallery-play-icon");
+const galleryPlayLabel = document.querySelector("#gallery-play-label");
 const galleryPosition = document.querySelector("#gallery-position");
 const galleryProgress = document.querySelector("#gallery-progress");
+const galleryLayout = document.querySelector(".gallery-layout");
 let lightboxTimer = 0;
 let lightboxTrigger = null;
 let lightboxPosition = 0;
 let galleryPositionIndex = 0;
 let lightboxTouchX = null;
+let galleryAutoplayEnabled = !reduceMotion;
+let galleryAutoplayTimer = 0;
+let galleryInView = false;
+const GALLERY_AUTOPLAY_DELAY = 5_000;
 
 function photoTitle(button) {
   const caption = button.closest("figure")?.querySelector("figcaption");
@@ -309,6 +317,7 @@ function showLightboxPhoto(position) {
 
 function openLightbox(button) {
   window.clearTimeout(lightboxTimer);
+  clearGalleryAutoplay();
   lightboxTrigger = button;
   lightboxPosition = Math.max(0, galleryButtons.indexOf(button));
   lightbox.hidden = false;
@@ -331,6 +340,7 @@ function closeLightbox() {
     lightboxImage.src = "";
     lightboxImage.classList.remove("is-changing");
     lightboxTrigger?.focus();
+    scheduleGalleryAutoplay();
   }, reduceMotion ? 0 : 300);
 }
 
@@ -357,9 +367,43 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "ArrowRight") showLightboxPhoto(lightboxPosition + 1);
 });
 
+function updateGalleryPlayButton() {
+  if (!galleryPlay) return;
+  galleryPlay.setAttribute("aria-pressed", String(galleryAutoplayEnabled));
+  galleryPlay.setAttribute(
+    "aria-label",
+    galleryAutoplayEnabled ? "暂停自动播放" : "开始自动播放",
+  );
+  galleryPlayIcon.textContent = galleryAutoplayEnabled ? "Ⅱ" : "▶";
+  galleryPlayLabel.textContent = galleryAutoplayEnabled ? "暂停" : "播放";
+}
+
+function clearGalleryAutoplay() {
+  window.clearTimeout(galleryAutoplayTimer);
+  galleryAutoplayTimer = 0;
+}
+
+function scheduleGalleryAutoplay(delay = GALLERY_AUTOPLAY_DELAY) {
+  clearGalleryAutoplay();
+  if (!galleryAutoplayEnabled || !galleryInView || !lightbox?.hidden || document.hidden) return;
+  galleryAutoplayTimer = window.setTimeout(() => {
+    if (!galleryAutoplayEnabled || !galleryInView || !lightbox?.hidden || document.hidden) return;
+    updateGalleryPosition(galleryPositionIndex + 1, "smooth");
+    scheduleGalleryAutoplay();
+  }, delay);
+}
+
+function setGalleryAutoplay(enabled, delay = GALLERY_AUTOPLAY_DELAY) {
+  galleryAutoplayEnabled = enabled;
+  updateGalleryPlayButton();
+  if (enabled) scheduleGalleryAutoplay(delay);
+  else clearGalleryAutoplay();
+}
+
 function updateGalleryPosition(index = galleryPositionIndex, behavior = "auto") {
   if (!galleryGrid || !gallerySlides.length) return;
-  galleryPositionIndex = Math.max(0, Math.min(gallerySlides.length - 1, index));
+  galleryPositionIndex =
+    ((index % gallerySlides.length) + gallerySlides.length) % gallerySlides.length;
   const first = gallerySlides[0];
   const target = gallerySlides[galleryPositionIndex];
   if (behavior !== "none") {
@@ -375,14 +419,28 @@ function updateGalleryPosition(index = galleryPositionIndex, behavior = "auto") 
   if (galleryProgress) {
     galleryProgress.style.width = `${((galleryPositionIndex + 1) / gallerySlides.length) * 100}%`;
   }
-  if (galleryPrev) galleryPrev.disabled = galleryPositionIndex === 0;
-  if (galleryNext) galleryNext.disabled = galleryPositionIndex === gallerySlides.length - 1;
+  if (galleryPrev) galleryPrev.disabled = gallerySlides.length <= 1;
+  if (galleryNext) galleryNext.disabled = gallerySlides.length <= 1;
 }
 
-galleryPrev?.addEventListener("click", () =>
-  updateGalleryPosition(galleryPositionIndex - 1, "smooth"));
-galleryNext?.addEventListener("click", () =>
-  updateGalleryPosition(galleryPositionIndex + 1, "smooth"));
+galleryPrev?.addEventListener("click", () => {
+  updateGalleryPosition(galleryPositionIndex - 1, "smooth");
+  scheduleGalleryAutoplay();
+});
+galleryNext?.addEventListener("click", () => {
+  updateGalleryPosition(galleryPositionIndex + 1, "smooth");
+  scheduleGalleryAutoplay();
+});
+galleryPlay?.addEventListener("click", () => {
+  setGalleryAutoplay(!galleryAutoplayEnabled);
+});
+galleryLayout?.addEventListener("pointerenter", clearGalleryAutoplay);
+galleryLayout?.addEventListener("pointerleave", () => scheduleGalleryAutoplay());
+galleryLayout?.addEventListener("focusin", clearGalleryAutoplay);
+galleryLayout?.addEventListener("focusout", () => scheduleGalleryAutoplay(2_000));
+galleryGrid?.addEventListener("pointerdown", clearGalleryAutoplay);
+galleryGrid?.addEventListener("pointerup", () => scheduleGalleryAutoplay(2_500));
+galleryGrid?.addEventListener("pointercancel", () => scheduleGalleryAutoplay(2_500));
 galleryGrid?.addEventListener("scroll", () => {
   if (!gallerySlides.length) return;
   let nextIndex = 0;
@@ -399,7 +457,23 @@ galleryGrid?.addEventListener("scroll", () => {
   if (nextIndex !== galleryPositionIndex) updateGalleryPosition(nextIndex, "none");
 }, { passive: true });
 window.addEventListener("resize", () => updateGalleryPosition(galleryPositionIndex, "none"));
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) clearGalleryAutoplay();
+  else scheduleGalleryAutoplay();
+});
+if (galleryLayout && "IntersectionObserver" in window) {
+  const galleryObserver = new IntersectionObserver((entries) => {
+    galleryInView = entries.some((entry) => entry.isIntersecting);
+    if (galleryInView) scheduleGalleryAutoplay();
+    else clearGalleryAutoplay();
+  }, { threshold: 0.32 });
+  galleryObserver.observe(galleryLayout);
+} else {
+  galleryInView = true;
+}
 updateGalleryPosition(0, "none");
+updateGalleryPlayButton();
+if (galleryAutoplayEnabled) scheduleGalleryAutoplay();
 
 const statViews = document.querySelector("#stat-views");
 const statVisitors = document.querySelector("#stat-visitors");

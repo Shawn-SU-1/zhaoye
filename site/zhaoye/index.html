@@ -22,7 +22,7 @@
   <meta name="twitter:image" content="https://zhaoye.8889.hair/assets/screenshot.jpg">
   <title>照夜 ZHAOYE｜Android 胶片暗房 App 下载与更新</title>
   <link rel="icon" href="assets/app-icon.png">
-  <link rel="stylesheet" href="styles.css?v=20261101-gallery4">
+  <link rel="stylesheet" href="styles.css?v=20261101-gallery5">
   <script type="application/ld+json">
     {
       "@context": "https://schema.org",
@@ -137,12 +137,22 @@
       <div class="gallery-layout">
         <div class="gallery-main">
           <div class="gallery-controls">
-            <span>左右浏览 · 点击看大图</span>
-            <b id="gallery-position">01 / 11</b>
+            <div class="gallery-count">
+              <span>影像浏览</span>
+              <b id="gallery-position">01 / 11</b>
+            </div>
             <i class="gallery-progress"><span id="gallery-progress"></span></i>
-            <div>
-              <button id="gallery-prev" type="button" aria-label="上一张照片">←</button>
-              <button id="gallery-next" type="button" aria-label="下一张照片">→</button>
+            <div class="gallery-buttons">
+              <button id="gallery-prev" type="button" aria-label="上一张照片">
+                <span aria-hidden="true">←</span> 上一张
+              </button>
+              <button id="gallery-play" type="button" aria-label="暂停自动播放" aria-pressed="true">
+                <span id="gallery-play-icon" aria-hidden="true">Ⅱ</span>
+                <b id="gallery-play-label">暂停</b>
+              </button>
+              <button id="gallery-next" type="button" aria-label="下一张照片">
+                下一张 <span aria-hidden="true">→</span>
+              </button>
             </div>
           </div>
           <div class="gallery-grid">
@@ -366,6 +376,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=20261101-gallery4"></script>
+  <script src="app.js?v=20261101-gallery5"></script>
 </body>
 </html>
