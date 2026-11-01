@@ -284,7 +284,7 @@ let lightboxTrigger = null;
 let lightboxPosition = 0;
 let galleryPositionIndex = 0;
 let lightboxTouchX = null;
-let galleryAutoplayEnabled = !reduceMotion;
+let galleryAutoplayEnabled = true;
 let galleryAutoplayTimer = 0;
 let galleryInView = false;
 const GALLERY_AUTOPLAY_DELAY = 5_000;
@@ -388,7 +388,7 @@ function scheduleGalleryAutoplay(delay = GALLERY_AUTOPLAY_DELAY) {
   if (!galleryAutoplayEnabled || !galleryInView || !lightbox?.hidden || document.hidden) return;
   galleryAutoplayTimer = window.setTimeout(() => {
     if (!galleryAutoplayEnabled || !galleryInView || !lightbox?.hidden || document.hidden) return;
-    updateGalleryPosition(galleryPositionIndex + 1, "smooth");
+    updateGalleryPosition(galleryPositionIndex + 1, reduceMotion ? "auto" : "smooth");
     scheduleGalleryAutoplay();
   }, delay);
 }
@@ -434,8 +434,6 @@ galleryNext?.addEventListener("click", () => {
 galleryPlay?.addEventListener("click", () => {
   setGalleryAutoplay(!galleryAutoplayEnabled);
 });
-galleryLayout?.addEventListener("pointerenter", clearGalleryAutoplay);
-galleryLayout?.addEventListener("pointerleave", () => scheduleGalleryAutoplay());
 galleryLayout?.addEventListener("focusin", clearGalleryAutoplay);
 galleryLayout?.addEventListener("focusout", () => scheduleGalleryAutoplay(2_000));
 galleryGrid?.addEventListener("pointerdown", clearGalleryAutoplay);
