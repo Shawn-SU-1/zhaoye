@@ -80,6 +80,7 @@ function observeReveal(nodes) {
 observeReveal(document.querySelectorAll([
   ".section-head",
   ".gallery-grid figure",
+  ".gallery-end",
   ".visitor-stats article",
   ".visitor-map-card",
   ".download-card",
@@ -263,22 +264,61 @@ fetch("https://api.github.com/repos/Shawn-SU-1/zhaoye", {
 const lightbox = document.querySelector("#photo-lightbox");
 const lightboxImage = document.querySelector("#lightbox-image");
 const lightboxClose = document.querySelector(".lightbox-close");
+const lightboxPrev = document.querySelector(".lightbox-prev");
+const lightboxNext = document.querySelector(".lightbox-next");
+const lightboxIndex = document.querySelector("#lightbox-index");
+const lightboxName = document.querySelector("#lightbox-name");
+const galleryGrid = document.querySelector(".gallery-grid");
+const galleryButtons = [...document.querySelectorAll(".gallery-grid button[data-full]")];
+const gallerySlides = galleryGrid ? [...galleryGrid.children] : [];
+const galleryPrev = document.querySelector("#gallery-prev");
+const galleryNext = document.querySelector("#gallery-next");
+const galleryPosition = document.querySelector("#gallery-position");
+const galleryProgress = document.querySelector("#gallery-progress");
 let lightboxTimer = 0;
 let lightboxTrigger = null;
+let lightboxPosition = 0;
+let galleryPositionIndex = 0;
+let lightboxTouchX = null;
 
-function openLightbox(button) {
+function photoTitle(button) {
+  const caption = button.closest("figure")?.querySelector("figcaption");
+  return (caption?.textContent || "").replace(/^\s*\d+\s*/, "").trim();
+}
+
+function showLightboxPhoto(position) {
+  if (!galleryButtons.length) return;
+  lightboxPosition = (position + galleryButtons.length) % galleryButtons.length;
+  const button = galleryButtons[lightboxPosition];
   const image = button.querySelector("img");
-  window.clearTimeout(lightboxTimer);
-  lightboxTrigger = button;
+  lightboxImage.classList.add("is-changing");
   lightboxImage.src = button.dataset.full;
   lightboxImage.alt = image?.alt || "";
+  lightboxIndex.textContent =
+    `${String(lightboxPosition + 1).padStart(2, "0")} / ${String(galleryButtons.length).padStart(2, "0")}`;
+  lightboxName.textContent = photoTitle(button);
+  lightboxImage.onload = () => {
+    requestAnimationFrame(() => lightboxImage.classList.remove("is-changing"));
+  };
+  const neighbor = galleryButtons[(lightboxPosition + 1) % galleryButtons.length];
+  if (neighbor?.dataset.full) {
+    const preload = new Image();
+    preload.src = neighbor.dataset.full;
+  }
+}
+
+function openLightbox(button) {
+  window.clearTimeout(lightboxTimer);
+  lightboxTrigger = button;
+  lightboxPosition = Math.max(0, galleryButtons.indexOf(button));
   lightbox.hidden = false;
   document.body.style.overflow = "hidden";
   requestAnimationFrame(() => lightbox.classList.add("is-open"));
+  showLightboxPhoto(lightboxPosition);
   lightboxClose.focus();
 }
 
-document.querySelectorAll(".gallery-grid button[data-full]").forEach((button) => {
+galleryButtons.forEach((button) => {
   button.addEventListener("click", () => openLightbox(button));
 });
 
@@ -289,17 +329,69 @@ function closeLightbox() {
   lightboxTimer = window.setTimeout(() => {
     lightbox.hidden = true;
     lightboxImage.src = "";
+    lightboxImage.classList.remove("is-changing");
     lightboxTrigger?.focus();
   }, reduceMotion ? 0 : 300);
 }
 
 lightboxClose?.addEventListener("click", closeLightbox);
+lightboxPrev?.addEventListener("click", () => showLightboxPhoto(lightboxPosition - 1));
+lightboxNext?.addEventListener("click", () => showLightboxPhoto(lightboxPosition + 1));
 lightbox?.addEventListener("click", (event) => {
   if (event.target === lightbox) closeLightbox();
 });
-document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !lightbox.hidden) closeLightbox();
+lightbox?.addEventListener("pointerdown", (event) => {
+  lightboxTouchX = event.clientX;
 });
+lightbox?.addEventListener("pointerup", (event) => {
+  if (lightboxTouchX == null) return;
+  const distance = event.clientX - lightboxTouchX;
+  lightboxTouchX = null;
+  if (Math.abs(distance) < 48) return;
+  showLightboxPhoto(lightboxPosition + (distance < 0 ? 1 : -1));
+});
+document.addEventListener("keydown", (event) => {
+  if (lightbox.hidden) return;
+  if (event.key === "Escape") closeLightbox();
+  if (event.key === "ArrowLeft") showLightboxPhoto(lightboxPosition - 1);
+  if (event.key === "ArrowRight") showLightboxPhoto(lightboxPosition + 1);
+});
+
+function updateGalleryPosition(index = galleryPositionIndex, behavior = "auto") {
+  if (!galleryGrid || !gallerySlides.length) return;
+  galleryPositionIndex = Math.max(0, Math.min(gallerySlides.length - 1, index));
+  const first = gallerySlides[0];
+  const target = gallerySlides[galleryPositionIndex];
+  if (behavior !== "none") {
+    galleryGrid.scrollTo({
+      left: Math.max(0, target.offsetLeft - first.offsetLeft),
+      behavior,
+    });
+  }
+  if (galleryPosition) {
+    galleryPosition.textContent =
+      `${String(galleryPositionIndex + 1).padStart(2, "0")} / ${String(gallerySlides.length).padStart(2, "0")}`;
+  }
+  if (galleryProgress) {
+    galleryProgress.style.width = `${((galleryPositionIndex + 1) / gallerySlides.length) * 100}%`;
+  }
+  if (galleryPrev) galleryPrev.disabled = galleryPositionIndex === 0;
+  if (galleryNext) galleryNext.disabled = galleryPositionIndex === gallerySlides.length - 1;
+}
+
+galleryPrev?.addEventListener("click", () =>
+  updateGalleryPosition(galleryPositionIndex - 1, "smooth"));
+galleryNext?.addEventListener("click", () =>
+  updateGalleryPosition(galleryPositionIndex + 1, "smooth"));
+galleryGrid?.addEventListener("scroll", () => {
+  if (!gallerySlides[1]) return;
+  const step = gallerySlides[1].offsetLeft - gallerySlides[0].offsetLeft;
+  if (step <= 0) return;
+  const nextIndex = Math.round(galleryGrid.scrollLeft / step);
+  if (nextIndex !== galleryPositionIndex) updateGalleryPosition(nextIndex, "none");
+}, { passive: true });
+window.addEventListener("resize", () => updateGalleryPosition(galleryPositionIndex, "none"));
+updateGalleryPosition(0, "none");
 
 const statViews = document.querySelector("#stat-views");
 const statVisitors = document.querySelector("#stat-visitors");

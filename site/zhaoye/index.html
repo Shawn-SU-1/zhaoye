@@ -22,7 +22,7 @@
   <meta name="twitter:image" content="https://zhaoye.8889.hair/assets/screenshot.jpg">
   <title>照夜 ZHAOYE｜Android 胶片暗房 App 下载与更新</title>
   <link rel="icon" href="assets/app-icon.png">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=20261101-gallery">
   <script type="application/ld+json">
     {
       "@context": "https://schema.org",
@@ -129,48 +129,92 @@
     <section id="gallery" class="gallery-section shell">
       <div class="section-head gallery-head">
         <div>
-          <p class="eyebrow">PHOTOGRAPHS</p>
-          <h2>沿着冬天，<br>去看见日本。</h2>
+          <p class="eyebrow">PHOTOGRAPHS · FIELD NOTES</p>
+          <h2>沿着冬天，<br>去看山河。</h2>
         </div>
-        <p>海岸、雪原与城市的夜色。这些照片均由照夜 App 冲印处理。</p>
+        <p>彩池、雪水、海岸与城市的夜色。所有照片均由照夜 App 冲印处理，原片只读。</p>
+      </div>
+      <div class="gallery-mobile-controls">
+        <span>左右滑动 · 点击看大图</span>
+        <b id="gallery-position">01 / 12</b>
+        <i class="gallery-progress"><span id="gallery-progress"></span></i>
+        <div>
+          <button id="gallery-prev" type="button" aria-label="上一张照片">←</button>
+          <button id="gallery-next" type="button" aria-label="下一张照片">→</button>
+        </div>
       </div>
       <div class="gallery-grid">
+        <figure>
+          <button type="button" data-full="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/031a0d730cb34bd0f26c69a34df34408.jpg">
+            <img src="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/031a0d730cb34bd0f26c69a34df34408.jpg" alt="翡翠色湖泊与秋日森林" loading="lazy" decoding="async">
+          </button>
+          <figcaption><span>01</span>翡翠海子</figcaption>
+        </figure>
         <figure>
           <button type="button" data-full="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/0e3d41a50d75f4ae4836c3f131570659.jpg">
             <img src="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/0e3d41a50d75f4ae4836c3f131570659.jpg" alt="冬日海岸铁路" loading="lazy" decoding="async">
           </button>
-          <figcaption><span>01</span>冬日海岸</figcaption>
+          <figcaption><span>02</span>冬日海岸</figcaption>
+        </figure>
+        <figure>
+          <button type="button" data-full="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/4672919cfeb5540bc2773eaec194356a.jpg">
+            <img src="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/4672919cfeb5540bc2773eaec194356a.jpg" alt="冬季雪水穿过森林" loading="lazy" decoding="async">
+          </button>
+          <figcaption><span>03</span>雪水穿林</figcaption>
         </figure>
         <figure>
           <button type="button" data-full="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/4d706a786484b71d55e93bc6aab0d02e.jpg">
             <img src="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/4d706a786484b71d55e93bc6aab0d02e.jpg" alt="雪原公路" loading="lazy" decoding="async">
           </button>
-          <figcaption><span>02</span>雪原之上</figcaption>
+          <figcaption><span>04</span>雪原之上</figcaption>
+        </figure>
+        <figure>
+          <button type="button" data-full="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/71b0bfb2e49ffa8ec95332f77ddcd96a.jpg">
+            <img src="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/71b0bfb2e49ffa8ec95332f77ddcd96a.jpg" alt="群山与阳光下的湖面" loading="lazy" decoding="async">
+          </button>
+          <figcaption><span>05</span>群山映湖</figcaption>
         </figure>
         <figure>
           <button type="button" data-full="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/7a512f96c36ece5e28bcdfd2f0914948.jpg">
             <img src="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/7a512f96c36ece5e28bcdfd2f0914948.jpg" alt="东京城市夜景" loading="lazy" decoding="async">
           </button>
-          <figcaption><span>03</span>城市入夜</figcaption>
+          <figcaption><span>06</span>城市入夜</figcaption>
+        </figure>
+        <figure>
+          <button type="button" data-full="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/a8fb7be42e872f2de0e9de10c440f684.jpg">
+            <img src="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/a8fb7be42e872f2de0e9de10c440f684.jpg" alt="冬日森林中的蓝色溪流" loading="lazy" decoding="async">
+          </button>
+          <figcaption><span>07</span>林间蓝流</figcaption>
         </figure>
         <figure>
           <button type="button" data-full="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/80668023f0367ea194d72bb52db6618a.jpg">
             <img src="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/80668023f0367ea194d72bb52db6618a.jpg" alt="雪山与冰河" loading="lazy" decoding="async">
           </button>
-          <figcaption><span>04</span>冰河切面</figcaption>
+          <figcaption><span>08</span>冰河切面</figcaption>
+        </figure>
+        <figure>
+          <button type="button" data-full="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/f410b9d9e870cf51cba4da58d812938f.jpg">
+            <img src="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/f410b9d9e870cf51cba4da58d812938f.jpg" alt="清澈湖水中露出的岩石" loading="lazy" decoding="async">
+          </button>
+          <figcaption><span>09</span>澄澈之眼</figcaption>
         </figure>
         <figure>
           <button type="button" data-full="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/bb24f2c8ebb71897b13da076ac7491f7.jpg">
             <img src="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/bb24f2c8ebb71897b13da076ac7491f7.jpg" alt="东京塔夜景" loading="lazy" decoding="async">
           </button>
-          <figcaption><span>05</span>东京灯火</figcaption>
+          <figcaption><span>10</span>东京灯火</figcaption>
         </figure>
         <figure>
           <button type="button" data-full="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/d972ff0fe7976a5249550d167d0b1ef0.jpg">
             <img src="https://pub-861b9af8d24447979ff0d1f294ffdbcf.r2.dev/d972ff0fe7976a5249550d167d0b1ef0.jpg" alt="富士山与五重塔" loading="lazy" decoding="async">
           </button>
-          <figcaption><span>06</span>富士暮色</figcaption>
+          <figcaption><span>11</span>富士暮色</figcaption>
         </figure>
+        <article class="gallery-end">
+          <p class="eyebrow">ZHAOYE PRINT</p>
+          <h3>不是套一层颜色，<br>而是重新走完一次冲印。</h3>
+          <a href="#download">下载照夜 <span>↗</span></a>
+        </article>
       </div>
     </section>
 
@@ -294,7 +338,7 @@
     <div>
       <p class="eyebrow">PRIVACY</p>
       <h3>Cookie 与访问统计</h3>
-      <p>同意后会记录一次匿名访问，并通过服务器向 ip-api.com 查询大致城市，用于访客统计与地图。原始 IP 不写入统计数据库，不用于广告。</p>
+      <p>同意后会记录一次匿名访问，并通过服务器向 IP 定位服务查询大致城市，用于访客统计与地图。原始 IP 不写入统计数据库，不用于广告。</p>
     </div>
     <div class="cookie-actions">
       <button id="consent-essential" type="button" class="button quiet">仅必要</button>
@@ -304,9 +348,15 @@
 
   <div id="photo-lightbox" class="photo-lightbox" role="dialog" aria-modal="true" aria-label="照片大图" hidden>
     <button class="lightbox-close" type="button" aria-label="关闭">×</button>
+    <button class="lightbox-nav lightbox-prev" type="button" aria-label="上一张照片">←</button>
+    <button class="lightbox-nav lightbox-next" type="button" aria-label="下一张照片">→</button>
     <img id="lightbox-image" src="" alt="">
+    <div class="lightbox-caption">
+      <span id="lightbox-index">01 / 11</span>
+      <b id="lightbox-name"></b>
+    </div>
   </div>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=20261101-gallery"></script>
 </body>
 </html>

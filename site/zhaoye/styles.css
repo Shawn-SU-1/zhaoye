@@ -282,19 +282,56 @@ h2 { font: 600 clamp(32px, 4vw, 54px)/1.13 "Noto Serif SC", "Songti SC", serif; 
 }
 .gallery-head > div { flex: 0 1 560px; }
 .gallery-head > p { flex: 1 1 340px; max-width: 440px; margin: 0 0 8px; }
+.gallery-mobile-controls { display: none; }
 .gallery-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 15px;
   min-width: 0;
+  align-items: stretch;
 }
-.gallery-grid figure {
+.gallery-grid > figure {
+  grid-column: span 3;
+  position: relative;
+  display: flex;
+  flex-direction: column;
   margin: 0;
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 16px;
   background: var(--panel);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, .14);
+  transition: border-color .35s ease, box-shadow .35s ease, transform .45s cubic-bezier(.22,1,.36,1);
+}
+.gallery-grid > figure:nth-child(1),
+.gallery-grid > figure:nth-child(11) { grid-column: span 6; }
+.gallery-grid > figure:nth-child(4),
+.gallery-grid > figure:nth-child(5),
+.gallery-grid > figure:nth-child(6) { grid-column: span 4; }
+.gallery-grid figure::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(125deg, rgba(255,255,255,.07), transparent 28%, transparent 72%, rgba(0,0,0,.12));
+  opacity: .55;
+  transition: opacity .35s ease;
+}
+.gallery-grid figure:hover {
+  transform: translateY(-4px);
+  border-color: rgba(222, 167, 76, .58);
+  box-shadow: 0 24px 54px rgba(0, 0, 0, .32);
+}
+.gallery-grid figure:hover::after { opacity: .85; }
+.gallery-grid figure:nth-child(1) button { aspect-ratio: 16 / 9; }
+.gallery-grid figure:nth-child(n+2) button { aspect-ratio: 5 / 4; }
+.gallery-grid figure button {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  z-index: 1;
 }
 .gallery-grid button {
   display: block;
@@ -308,12 +345,13 @@ h2 { font: 600 clamp(32px, 4vw, 54px)/1.13 "Noto Serif SC", "Songti SC", serif; 
 .gallery-grid img {
   display: block;
   width: 100%;
-  aspect-ratio: 5 / 4;
+  height: 100%;
   object-fit: cover;
-  transition: transform .5s ease, filter .5s ease;
+  transition: transform .72s cubic-bezier(.22,1,.36,1), filter .5s ease;
 }
-.gallery-grid figure:hover img { transform: scale(1.025); filter: brightness(1.06); }
+.gallery-grid figure:hover img { transform: scale(1.035); filter: brightness(1.07) saturate(1.03); }
 .gallery-grid button:active img { transform: scale(.985); }
+.gallery-grid button:focus-visible { outline: 2px solid var(--amber); outline-offset: -5px; }
 .gallery-grid figcaption {
   display: flex;
   align-items: center;
@@ -321,8 +359,106 @@ h2 { font: 600 clamp(32px, 4vw, 54px)/1.13 "Noto Serif SC", "Songti SC", serif; 
   padding: 13px 15px;
   color: var(--bone);
   font-size: 12px;
+  min-height: 45px;
+  background: rgba(15, 12, 9, .94);
 }
 .gallery-grid figcaption span { color: var(--amber); font: 9px/1 ui-monospace, monospace; }
+.gallery-grid figcaption::after {
+  content: "↗";
+  margin-left: auto;
+  color: var(--faint);
+  font-size: 13px;
+  transition: color .25s ease, transform .25s ease;
+}
+.gallery-grid figure:hover figcaption::after {
+  color: var(--amber);
+  transform: translate(2px, -2px);
+}
+.gallery-end {
+  grid-column: span 6;
+  position: relative;
+  min-height: 260px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 15px;
+  padding: clamp(24px, 4vw, 46px);
+  border: 1px solid #654720;
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 86% 16%, rgba(222,167,76,.2), transparent 30%),
+    linear-gradient(145deg, #18120c, #0d0b09 70%);
+}
+.gallery-end::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 23px, rgba(255,255,255,.035) 24px 25px),
+    linear-gradient(transparent 70%, rgba(0,0,0,.35));
+  mask-image: linear-gradient(to bottom, transparent, #000 45%);
+  pointer-events: none;
+}
+.gallery-end > * { position: relative; z-index: 1; }
+.gallery-end h3 {
+  max-width: 520px;
+  margin: 0;
+  color: var(--bone);
+  font: 500 clamp(25px, 3vw, 42px)/1.18 Georgia, "Songti SC", serif;
+  letter-spacing: -.03em;
+}
+.gallery-end a {
+  width: max-content;
+  color: var(--amber);
+  font-size: 12px;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(222,167,76,.4);
+  padding-bottom: 4px;
+}
+.gallery-end a span { display: inline-block; transition: transform .25s ease; }
+.gallery-end a:hover span { transform: translate(2px, -2px); }
+
+.gallery-mobile-controls {
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 9px 12px;
+  margin: 0 0 14px;
+  color: var(--faint);
+  font-size: 10px;
+}
+.gallery-mobile-controls b {
+  color: var(--bone);
+  font: 500 10px/1 ui-monospace, monospace;
+  letter-spacing: .08em;
+}
+.gallery-mobile-controls > div { display: flex; gap: 5px; }
+.gallery-mobile-controls button {
+  width: 34px;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--bone);
+  font-size: 16px;
+  cursor: pointer;
+}
+.gallery-mobile-controls button:disabled { opacity: .3; cursor: default; }
+.gallery-progress {
+  grid-column: 1 / -1;
+  display: block;
+  height: 1px;
+  overflow: hidden;
+  background: rgba(255,255,255,.1);
+}
+.gallery-progress > span {
+  display: block;
+  width: 8.333%;
+  height: 100%;
+  background: var(--amber);
+  transform-origin: left center;
+  transition: width .24s ease;
+}
 
 .visitor-section { padding-block: 100px; border-top: 1px solid rgba(255,255,255,.07); }
 .visitor-head { max-width: 680px; }
@@ -445,7 +581,7 @@ h2 { font: 600 clamp(32px, 4vw, 54px)/1.13 "Noto Serif SC", "Songti SC", serif; 
 .photo-lightbox {
   position: fixed;
   inset: 0;
-  z-index: 50;
+  z-index: 70;
   display: grid;
   place-items: center;
   padding: 38px;
@@ -473,10 +609,48 @@ h2 { font: 600 clamp(32px, 4vw, 54px)/1.13 "Noto Serif SC", "Songti SC", serif; 
   transform: translateY(14px) scale(.94);
   transition: opacity .28s ease, transform .34s cubic-bezier(.22,1,.36,1);
 }
+.photo-lightbox img.is-changing { opacity: .25; transform: translateY(4px) scale(.985); }
 .photo-lightbox.is-open img {
   opacity: 1;
   transform: translateY(0) scale(1);
 }
+.lightbox-nav {
+  position: fixed;
+  top: 50%;
+  z-index: 2;
+  width: 48px;
+  height: 48px;
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 50%;
+  background: rgba(20,16,12,.76);
+  color: var(--bone);
+  font-size: 20px;
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition: border-color .2s ease, background .2s ease;
+}
+.lightbox-prev { left: clamp(12px, 3vw, 42px); }
+.lightbox-next { right: clamp(12px, 3vw, 42px); }
+.lightbox-nav:hover { border-color: var(--amber); background: rgba(35,27,19,.94); }
+.lightbox-caption {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100vw - 150px);
+  padding: 8px 12px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 999px;
+  background: rgba(14,11,9,.82);
+  color: var(--bone);
+  transform: translateX(-50%);
+  backdrop-filter: blur(10px);
+}
+.lightbox-caption span { color: var(--amber); font: 9px/1 ui-monospace, monospace; }
+.lightbox-caption b { overflow: hidden; font-size: 11px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .lightbox-close {
   position: fixed;
   top: 22px;
@@ -489,6 +663,7 @@ h2 { font: 600 clamp(32px, 4vw, 54px)/1.13 "Noto Serif SC", "Songti SC", serif; 
   color: var(--bone);
   font-size: 26px;
   cursor: pointer;
+  z-index: 3;
   transition: transform .2s ease, border-color .2s ease;
 }
 .lightbox-close:hover {
@@ -729,8 +904,10 @@ footer button:hover { color: var(--amber); }
   .hero-visual { order: 2; }
   .gallery-head { align-items: flex-start; flex-direction: column; gap: 8px; }
   .gallery-head > div { flex-basis: auto; }
-  .gallery-head > p { max-width: 620px; }
+  .gallery-head > p { flex-basis: auto; max-width: 620px; }
   .gallery-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .gallery-grid > * { grid-column: auto !important; }
+  .gallery-grid > .gallery-end { grid-column: span 2 !important; }
   .visitor-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cookie-consent { grid-template-columns: 1fr; align-items: stretch; }
   .download-grid { grid-template-columns: 1fr; }
@@ -758,6 +935,32 @@ footer button:hover { color: var(--amber); }
     white-space: nowrap;
   }
   .nav nav::-webkit-scrollbar { display: none; }
+  .gallery-section { padding-block: 76px; }
+  .gallery-mobile-controls { display: grid; }
+  .gallery-grid {
+    display: flex;
+    gap: 12px;
+    margin-inline: -14px;
+    padding: 2px 14px 18px;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scroll-snap-type: x mandatory;
+    scroll-padding-inline: 14px;
+    scrollbar-width: none;
+  }
+  .gallery-grid::-webkit-scrollbar { display: none; }
+  .gallery-grid > figure,
+  .gallery-grid > .gallery-end {
+    flex: 0 0 min(82vw, 360px);
+    width: min(82vw, 360px);
+    scroll-snap-align: start;
+  }
+  .gallery-grid figure:nth-child(1) button,
+  .gallery-grid figure:nth-child(n+2) button { aspect-ratio: 4 / 3; }
+  .gallery-grid > figure:hover { transform: none; box-shadow: 0 12px 34px rgba(0,0,0,.14); }
+  .gallery-grid > .gallery-end { min-height: 310px; }
+  .gallery-grid figcaption { min-height: 42px; }
+  .lightbox-caption { bottom: 12px; }
 }
 
 @media (max-width: 480px) {
@@ -768,13 +971,21 @@ footer button:hover { color: var(--amber); }
   .features { grid-template-columns: 1fr; }
   .features article { border-right: 0; border-bottom: 1px solid var(--line); }
   .features article:last-child { border-bottom: 0; }
-  .gallery-grid { grid-template-columns: minmax(0, 1fr); }
+  .gallery-grid > figure,
+  .gallery-grid > .gallery-end {
+    flex-basis: min(86vw, 350px);
+    width: min(86vw, 350px);
+  }
   .visitor-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .visitor-map-card { padding: 12px; }
   .map-title { align-items: flex-start; flex-direction: column; gap: 4px; }
   .cookie-actions { flex-direction: column; }
   .photo-lightbox { padding: 18px; }
   .lightbox-close { top: 14px; right: 14px; }
+  .lightbox-nav { width: 40px; height: 40px; font-size: 17px; }
+  .lightbox-prev { left: 8px; }
+  .lightbox-next { right: 8px; }
+  .lightbox-caption { max-width: calc(100vw - 112px); }
   .film-label { left: 0; }
 }
 
