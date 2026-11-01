@@ -32,7 +32,7 @@ GEO_FIELDS = "status,country,countryCode,regionName,city,lat,lon"
 GEO_TTL_SECONDS = 86_400
 VISIT_GAP_SECONDS = 8
 GITHUB_REPO_API = "https://api.github.com/repos/Shawn-SU-1/zhaoye"
-GITHUB_STARS_TTL_SECONDS = 600
+GITHUB_STARS_TTL_SECONDS = 86_400
 
 REGION_NAMES = {
     "TW": "中国台湾",
